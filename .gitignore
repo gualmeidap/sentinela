@@ -1,0 +1,39 @@
+# Build Maven
+target/
+*.jar
+*.war
+
+# --- Restricao do projeto ---------------------------------------------------
+# A instancia privada nunca entra no repositorio: nem URL, nem nome de sistema,
+# nem IP. Qualquer arquivo de configuracao local fica de fora por padrao.
+CLAUDE.local.md
+application-local.yml
+application-local.yaml
+application-local.properties
+application-privado.*
+*.local.yml
+*.local.yaml
+*.local.properties
+.env
+.env.*
+alvos*.yml
+alvos*.json
+# ---------------------------------------------------------------------------
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# Sistema operacional
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs locais
+*.log
