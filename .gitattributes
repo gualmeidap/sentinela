@@ -1,0 +1,13 @@
+# Normaliza as quebras de linha no repositorio para LF, independente do
+# sistema operacional de quem clona. Sem isto, um clone no Windows versiona
+# CRLF e o script quebra no runner Linux do CI.
+* text=auto eol=lf
+
+# Scripts nativos do Windows precisam de CRLF para funcionar.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# O Maven Wrapper e um shell script: CRLF o torna inexecutavel em Linux/macOS.
+mvnw text eol=lf
+
+*.jar binary
