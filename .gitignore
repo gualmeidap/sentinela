@@ -6,6 +6,9 @@ target/
 # --- Restricao do projeto ---------------------------------------------------
 # A instancia privada nunca entra no repositorio: nem URL, nem nome de sistema,
 # nem IP. Qualquer arquivo de configuracao local fica de fora por padrao.
+# O briefing nao e versionado: o README centraliza o que e publico, e o
+# CLAUDE.local.md guarda a versao com os identificadores reais.
+CLAUDE.md
 CLAUDE.local.md
 application-local.yml
 application-local.yaml
