@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Herdar do starter-parent do Spring Boot fixa as versoes de todas as
+       dependencias do ecossistema. Por isso as <dependency> abaixo nao tem
+       <version>: quem decide e o parent. -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.1</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.sentinela</groupId>
+  <artifactId>sentinela-api</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>sentinela-api</name>
+  <description>API de leitura do portal de observabilidade</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <!-- Traz Spring MVC + Tomcat embutido + Jackson (JSON). E o que faz a
+         aplicacao virar um servidor HTTP sem instalar nada por fora. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- JUnit 5, AssertJ, Mockito e o suporte de teste do Spring.
+         Ainda sem testes escritos: entra agora para o passo 1 ja nascer
+         com o alicerce pronto. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Da o "mvn spring-boot:run" e empacota um jar executavel. -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
