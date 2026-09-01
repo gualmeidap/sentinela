@@ -41,6 +41,14 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+
+    <!-- Anotacoes de fatia de teste do MVC (@WebMvcTest). No Spring Boot 4 elas
+         sairam do spring-boot-starter-test e viraram artefato por modulo. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-webmvc-test</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

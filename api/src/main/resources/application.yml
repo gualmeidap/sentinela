@@ -1,6 +1,16 @@
 spring:
   application:
     name: sentinela-api
+  profiles:
+    # O perfil local liga o semeador de dados sinteticos. Um deploy real
+    # sobrescreve isto com SPRING_PROFILES_ACTIVE e nao semeia nada.
+    active: local
 
 server:
   port: 8080
+  error:
+    # Erro nunca devolve mensagem de excecao nem pilha: e por ai que caminho
+    # interno e nome de usuario vazam para fora.
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
