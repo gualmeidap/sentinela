@@ -61,7 +61,7 @@ flowchart LR
 | Peça | O que faz | Tecnologia | Estado |
 |---|---|---|---|
 | `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | não iniciado |
-| `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em EC2 | esqueleto no ar |
+| `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em EC2 | disponibilidade no ar (local) |
 | `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | não iniciado |
 | — | Persistência | DynamoDB | não iniciado |
 
@@ -77,9 +77,14 @@ sentinela/
 ├── api/                      Spring Boot — única peça com código hoje
 │   ├── mvnw, mvnw.cmd        Maven Wrapper: build sem instalar Maven
 │   ├── pom.xml
-│   └── src/main/java/com/sentinela/api/
-│       ├── SentinelaApiApplication.java
-│       └── ping/PingController.java
+│   └── src/
+│       ├── main/java/com/sentinela/api/
+│       │   ├── sistema/          catálogo dos alvos (lista fixa, passo 1)
+│       │   ├── disponibilidade/  regra de cálculo, persistência e endpoints
+│       │   ├── erro/             tradução de exceção em resposta HTTP
+│       │   ├── dev/              semeador de dados sintéticos (perfil local)
+│       │   └── ping/
+│       └── test/java/com/sentinela/api/
 ├── coletor/                  reservado — passo 5
 └── web/                      reservado — passos 2 e 6
 ```
@@ -158,10 +163,14 @@ aplicação.
 | Método | Rota | O que faz | Estado |
 |---|---|---|---|
 | `GET` | `/ping` | Verificação de vida da própria API | no ar |
+| `GET` | `/sistemas` | Lista os sistemas monitorados com o estado de cada um agora | no ar |
+| `GET` | `/sistemas/{id}/disponibilidade` | Fita das últimas 24 h em blocos de 15 min, com o percentual | no ar |
 | `POST` | `/eventos` | Recebe evento de negócio, com chave por aplicação | passo 3 |
 
-As rotas de leitura — estado atual dos sistemas, fita de disponibilidade de 24 h
-e eventos do dia — são definidas junto com os passos 1 e 3.
+Id desconhecido devolve `404` no formato ProblemDetail (RFC 7807), com um campo
+`codigo` estável para o cliente decidir o que fazer sem depender do texto.
+
+As rotas de leitura de eventos entram junto com o passo 3.
 
 ## Escopo da versão 1
 
@@ -215,12 +224,15 @@ No PowerShell, use `.\mvnw.cmd spring-boot:run`. A aplicação sobe em
 `http://localhost:8080`.
 
 ```bash
-curl http://localhost:8080/ping
+curl http://localhost:8080/sistemas
 ```
 
-```json
-{"servico":"sentinela-api","status":"ok","instante":"2026-08-30T19:21:31.098514Z"}
-```
+No perfil `local`, que é o padrão, a aplicação semeia 24 h de verificações
+sintéticas na subida — o coletor que gera medição de verdade só existe no passo
+5. Sem isso os endpoints responderiam corretamente uma tela vazia, e não daria
+para conferir se a fita e o percentual estão certos. Fora do perfil `local` nada
+é semeado: dado sintético misturado com medição real seria pior do que dado
+nenhum.
 
 Para rodar os testes:
 
@@ -232,9 +244,8 @@ cd api && ./mvnw test
 
 Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar local.
 
-- [ ] **1.** Spring Boot local, banco local, lista de sistemas fixa no código,
-      endpoints de disponibilidade respondendo — *em andamento: a aplicação sobe
-      e responde `GET /ping`, ainda sem persistência nem regra de negócio*
+- [x] **1.** Spring Boot local, banco local, lista de sistemas fixa no código,
+      endpoints de disponibilidade respondendo
 - [ ] **2.** Página simples lendo da API local
 - [ ] **3.** `POST /eventos` funcionando local, eventos enviados na mão via curl
 - [ ] **4.** Troca do banco local para DynamoDB
