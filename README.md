@@ -1,5 +1,6 @@
 # Sentinela
 
+[![CI](https://github.com/gualmeidap/sentinela/actions/workflows/ci.yml/badge.svg)](https://github.com/gualmeidap/sentinela/actions/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-21-b07219)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-6DB33F)
 ![AWS](https://img.shields.io/badge/AWS-Always%20Free-FF9900)
@@ -283,11 +284,14 @@ Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar lo
 - [ ] **6.** Deploy: API na EC2, página no S3 com CloudFront
 - [ ] **7.** Publicação de eventos reais pelo sistema de origem
 
-Em paralelo, como parte do escopo e não como extra: teste automatizado das
-regras de negócio (agregação por motivo, cálculo de disponibilidade, rejeição de
-evento malformado, limite por aplicação), tratamento explícito de cada modo de
-falha — alvo que não responde, alvo lento demais, banco recusando escrita,
-Lambda estourando o tempo — e CI no GitHub Actions rodando os testes a cada push.
+Como parte do escopo e não como extra, já de pé: **23 testes** cobrindo cálculo
+de disponibilidade, agregação em blocos, rejeição de verificação malformada e a
+regra de CORS; e **CI no GitHub Actions** rodando tudo a cada push, num runner
+Linux — que é o que pega o que só quebra fora do Windows.
+
+Ainda pendentes, junto das etapas que os criam: agregação de evento por motivo,
+limite de escrita por aplicação, e o tratamento explícito de alvo que não
+responde, alvo lento demais, banco recusando escrita e Lambda estourando o tempo.
 
 ## Custo
 

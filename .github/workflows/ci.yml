@@ -1,0 +1,45 @@
+# Roda os testes a cada push e em cada pull request.
+#
+# O runner e Linux, enquanto o desenvolvimento acontece no Windows -- e essa
+# diferenca e metade do valor do CI: ela pega o que so quebra no outro sistema,
+# como caminho de arquivo e quebra de linha. E por isso que o mvnw precisa estar
+# versionado com bit de execucao e em LF, garantidos pelo .gitattributes.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Chegando commit novo no mesmo branch, a execucao anterior e cancelada: nao
+# adianta gastar minuto testando codigo que ja foi substituido.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    name: Testes da API
+    runs-on: ubuntu-latest
+
+    # Menor permissao possivel: este job so precisa ler o codigo.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      - name: Instalar o JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: temurin
+          # Guarda o ~/.m2 entre execucoes. Sem isto, cada push baixaria o
+          # Spring Boot inteiro de novo.
+          cache: maven
+
+      - name: Rodar os testes
+        working-directory: api
+        run: ./mvnw -B --no-transfer-progress verify
