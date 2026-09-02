@@ -134,6 +134,27 @@ e uma única causa. Com código fechado, três falhas pelo mesmo motivo aparecem
 "3 falhas, todas pela mesma dependência indisponível" — que é a informação útil.
 "3 falhas" não é.
 
+### Por que a lista de tipos e motivos vive na configuração
+
+`tipo` e `motivo` são lista fechada, mas a lista mora no `application.yml`, por
+aplicação — não num `enum` Java. Acrescentar um código novo passa a ser mudança
+de configuração em vez de recompilação e deploy, sem deixar de ser fechado: o
+que não está declarado é recusado com `400`.
+
+O mesmo bloco de configuração declara quem pode publicar, com que chave, com que
+códigos e com que volume. Manter as quatro coisas juntas evita o caso clássico
+de alguém cadastrar uma chave nova e esquecer do limite.
+
+### Por que valor de contexto só aceita código
+
+O modelo permite campos de contexto extras (`campus`, `fornecedorTipo`) desde que
+não identifiquem pessoa. Só que "não identifica pessoa" não se verifica sozinho —
+então a regra virou formato: chave declarada na configuração, e valor obrigado a
+casar com `^[a-z0-9][a-z0-9_.-]{0,39}$`.
+
+`unidade_2` passa. `Joao da Silva` e `joao@exemplo.com` não. É uma barreira
+estrutural, não um pedido de boa vontade ao publicador.
+
 ### Por que a página não tem framework
 
 O painel é HTML, CSS e JavaScript puros. Não é purismo: o destino dele é ser
@@ -181,12 +202,23 @@ aplicação.
 | `GET` | `/ping` | Verificação de vida da própria API | no ar |
 | `GET` | `/sistemas` | Lista os sistemas monitorados com o estado de cada um agora | no ar |
 | `GET` | `/sistemas/{id}/disponibilidade` | Fita das últimas 24 h em blocos de 15 min, com o percentual | no ar |
-| `POST` | `/eventos` | Recebe evento de negócio, com chave por aplicação | passo 3 |
+| `POST` | `/eventos` | Recebe evento de negócio, autenticado por chave da aplicação | no ar |
+| `GET` | `/sistemas/{id}/eventos` | Contagem do dia por tipo e resultado, falhas por motivo, e os últimos eventos | no ar |
 
-Id desconhecido devolve `404` no formato ProblemDetail (RFC 7807), com um campo
-`codigo` estável para o cliente decidir o que fazer sem depender do texto.
+Todo erro sai no formato ProblemDetail (RFC 7807), com um campo `codigo` estável
+para o cliente decidir o que fazer sem depender do texto:
 
-As rotas de leitura de eventos entram junto com o passo 3.
+| Situação | Status | `codigo` |
+|---|---|---|
+| Chave ausente ou desconhecida | `401` | `chave_invalida` |
+| Chave publicando por outro sistema | `403` | `publicacao_nao_autorizada` |
+| Tipo ou motivo fora da lista fechada | `400` | `tipo_desconhecido`, `motivo_desconhecido` |
+| Campo que a API não conhece no payload | `400` | `corpo_ilegivel` |
+| Volume acima do combinado | `429` | `limite_excedido` |
+
+**Nenhuma resposta de erro devolve conteúdo da requisição.** Num portal cuja regra
+é que dado pessoal não atravessa, a mensagem de erro é justamente por onde ele
+passaria sem ninguém perceber.
 
 ## Escopo da versão 1
 
@@ -278,7 +310,7 @@ Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar lo
 - [x] **1.** Spring Boot local, banco local, lista de sistemas fixa no código,
       endpoints de disponibilidade respondendo
 - [x] **2.** Página simples lendo da API local
-- [ ] **3.** `POST /eventos` funcionando local, eventos enviados na mão via curl
+- [x] **3.** `POST /eventos` funcionando local, eventos enviados na mão via curl
 - [ ] **4.** Troca do banco local para DynamoDB
 - [ ] **5.** Coletor em Java puro, local primeiro, depois em Lambda com EventBridge
 - [ ] **6.** Deploy: API na EC2, página no S3 com CloudFront

@@ -7,9 +7,10 @@
  * direto pelo CloudFront. Nao ha build, nao ha node_modules, nao ha nada para
  * quebrar entre escrever e publicar.
  *
- * Toda a inteligencia -- calculo de fita, percentual, estado de bloco -- ficou
- * na API. A pagina so desenha o que recebe. Se a regra estivesse aqui, ela
- * precisaria ser reescrita e testada de novo em qualquer outro consumidor.
+ * Toda a inteligencia -- calculo de fita, percentual, estado de bloco,
+ * agregacao de evento por motivo -- ficou na API. A pagina so desenha o que
+ * recebe. Se a regra estivesse aqui, ela precisaria ser reescrita e testada de
+ * novo em qualquer outro consumidor.
  */
 
 // Em producao isto vira o dominio da API na EC2.
@@ -31,15 +32,17 @@ async function buscarJson(caminho) {
 async function carregar() {
   try {
     const sistemas = await buscarJson('/sistemas');
+    const caminho = (sistema, recurso) =>
+      '/sistemas/' + encodeURIComponent(sistema.id) + '/' + recurso;
 
-    // Promise.all dispara as buscas de fita em paralelo e espera todas.
-    // Em serie, tres sistemas custariam tres viagens somadas.
-    const fitas = await Promise.all(
-      sistemas.map((sistema) =>
-        buscarJson('/sistemas/' + encodeURIComponent(sistema.id) + '/disponibilidade'))
-    );
+    // Promise.all dispara tudo em paralelo e espera o conjunto. Em serie, tres
+    // sistemas custariam seis viagens somadas.
+    const [fitas, eventos] = await Promise.all([
+      Promise.all(sistemas.map((s) => buscarJson(caminho(s, 'disponibilidade')))),
+      Promise.all(sistemas.map((s) => buscarJson(caminho(s, 'eventos')))),
+    ]);
 
-    desenhar(sistemas, fitas);
+    desenhar(sistemas, fitas, eventos);
     esconderAviso();
     atualizacao.textContent = 'atualizado as ' + hora(new Date());
   } catch (erro) {
@@ -47,11 +50,13 @@ async function carregar() {
   }
 }
 
-function desenhar(sistemas, fitas) {
-  painel.replaceChildren(...sistemas.map((sistema, i) => cartao(sistema, fitas[i])));
+function desenhar(sistemas, fitas, eventos) {
+  painel.replaceChildren(
+    ...sistemas.map((sistema, i) => cartao(sistema, fitas[i], eventos[i]))
+  );
 }
 
-function cartao(sistema, fita) {
+function cartao(sistema, fita, eventos) {
   const artigo = elemento('article', 'cartao');
 
   const topo = elemento('div', 'cartao-topo');
@@ -61,7 +66,7 @@ function cartao(sistema, fita) {
     numeros(sistema, fita)
   );
 
-  artigo.append(topo, desenharFita(fita), eixo(fita));
+  artigo.append(topo, desenharFita(fita), eixo(fita), secaoDeEventos(eventos));
   return artigo;
 }
 
@@ -130,6 +135,98 @@ function eixo(fita) {
   return linha;
 }
 
+/*
+ * A metade que diferencia o portal: o que o sistema fez, nao so se respondeu.
+ *
+ * Sistema sem evento nenhum recebe uma linha discreta em vez de secao vazia --
+ * a maioria dos sistemas monitorados nunca vai publicar evento, e nao faz
+ * sentido reservar espaco para isso em todos os cartoes.
+ */
+function secaoDeEventos(eventos) {
+  const secao = elemento('section', 'eventos');
+  const hoje = eventos.hoje;
+
+  if (hoje.total === 0) {
+    secao.append(elemento('p', 'eventos-vazio', 'Sem eventos publicados hoje.'));
+    return secao;
+  }
+
+  const cabecalho = elemento('div', 'eventos-cabecalho');
+  cabecalho.append(
+    elemento('h3', null, 'Eventos de hoje'),
+    contagemGeral(hoje)
+  );
+  secao.append(cabecalho, listaDeTipos(hoje.tipos));
+
+  if (eventos.ultimos.length > 0) {
+    secao.append(ultimosEventos(eventos.ultimos));
+  }
+  return secao;
+}
+
+function contagemGeral(hoje) {
+  const linha = elemento('p', 'eventos-total');
+  linha.append(
+    elemento('strong', null, String(hoje.total)),
+    elemento('span', null, ' eventos - '),
+    elemento('strong', 'ok', String(hoje.sucessos)),
+    elemento('span', null, ' sucesso, '),
+    elemento('strong', hoje.falhas > 0 ? 'ruim' : null, String(hoje.falhas)),
+    elemento('span', null, ' falha')
+  );
+  return linha;
+}
+
+function listaDeTipos(tipos) {
+  const lista = elemento('ul', 'tipos');
+  lista.append(...tipos.map(linhaDeTipo));
+  return lista;
+}
+
+function linhaDeTipo(tipo) {
+  const item = elemento('li');
+  const contagem = elemento('span', 'tipo-contagem');
+  contagem.append(
+    elemento('strong', 'ok', String(tipo.sucessos)),
+    elemento('span', null, ' sucesso, '),
+    elemento('strong', tipo.falhas > 0 ? 'ruim' : null, String(tipo.falhas)),
+    elemento('span', null, ' falha')
+  );
+
+  item.append(elemento('span', 'tipo-nome', tipo.tipo), contagem);
+
+  // "3 falhas" nao ajuda ninguem; "3 falhas, todas pela mesma dependencia fora
+  // do ar" aponta para onde olhar. Por isso o motivo aparece junto, e nao
+  // escondido atras de um clique.
+  const motivos = Object.entries(tipo.falhasPorMotivo);
+  if (motivos.length > 0) {
+    item.append(elemento('span', 'motivos',
+      motivos.map(([motivo, quantas]) => motivo + ' x' + quantas).join('  ·  ')));
+  }
+  return item;
+}
+
+function ultimosEventos(eventos) {
+  const bloco = elemento('details', 'ultimos');
+  bloco.append(elemento('summary', null, 'Ultimos ' + eventos.length + ' eventos'));
+
+  const lista = elemento('ul');
+  lista.append(...eventos.map((evento) => {
+    const item = elemento('li');
+    item.append(
+      elemento('span', 'evento-hora', hora(new Date(evento.ocorridoEm))),
+      elemento('span', 'evento-tipo', evento.tipo),
+      elemento('span', 'evento-resultado ' + evento.resultado.toLowerCase(),
+        evento.resultado === 'SUCESSO' ? 'sucesso' : 'falha'),
+      elemento('span', 'evento-motivo', evento.motivo || '')
+    );
+    return item;
+  }));
+
+  bloco.append(lista);
+  return bloco;
+}
+
 function classeDaSituacao(situacao) {
   if (situacao === 'NO_AR') return 'no-ar';
   if (situacao === 'FORA_DO_AR') return 'fora-do-ar';
@@ -137,9 +234,9 @@ function classeDaSituacao(situacao) {
 }
 
 /*
- * O texto entra por textContent, nunca por innerHTML. Nome de sistema vem da
- * configuracao da instancia, e concatenar isso em HTML seria abrir a porta para
- * script injetado por quem edita a configuracao.
+ * O texto entra por textContent, nunca por innerHTML. Nome de sistema, tipo e
+ * motivo vem de configuracao e de sistemas externos; concatenar isso em HTML
+ * seria abrir a porta para script injetado por quem publica evento.
  */
 function elemento(tag, classe, texto) {
   const no = document.createElement(tag);

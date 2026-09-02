@@ -215,3 +215,136 @@ body {
   color: var(--texto-fraco);
   font-size: 0.9rem;
 }
+
+/* --- Eventos de negocio ---------------------------------------------------
+ * A metade que diferencia o portal. Fica abaixo da fita porque responde a
+ * pergunta seguinte: o sistema esta de pe, e o que ele andou fazendo?
+ */
+.eventos {
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--borda);
+}
+
+.eventos-vazio {
+  margin: 0;
+  color: var(--texto-fraco);
+  font-size: 0.8rem;
+}
+
+.eventos-cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.eventos-cabecalho h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--texto-fraco);
+}
+
+.eventos-total {
+  margin: 0;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ok { color: var(--disponivel); }
+.ruim { color: var(--indisponivel); }
+
+.tipos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tipos li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--borda);
+}
+
+.tipos li:last-child { border-bottom: none; }
+
+.tipo-nome {
+  flex: 1 1 11rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.tipo-contagem {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.motivos {
+  flex: 1 1 100%;
+  color: var(--texto-fraco);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+}
+
+.ultimos {
+  margin-top: 0.7rem;
+  font-size: 0.78rem;
+}
+
+.ultimos summary {
+  color: var(--texto-fraco);
+  cursor: pointer;
+}
+
+.ultimos ul {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  max-height: 15rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.ultimos li {
+  display: grid;
+  /* Tipo com largura contida: deixar 1fr para ele empurrava o motivo para o
+     outro lado da tela, longe do "falha" a que se refere. */
+  grid-template-columns: 3.2rem minmax(0, 12rem) 4rem minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  align-items: baseline;
+}
+
+.evento-hora {
+  color: var(--texto-fraco);
+  font-variant-numeric: tabular-nums;
+}
+
+.evento-tipo,
+.evento-motivo {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evento-motivo { color: var(--texto-fraco); }
+
+.evento-resultado { font-size: 0.72rem; }
+.evento-resultado.sucesso { color: var(--disponivel); }
+.evento-resultado.falha { color: var(--indisponivel); }
+
+@media (max-width: 34rem) {
+  .ultimos li {
+    grid-template-columns: 3.2rem minmax(0, 1fr) 4.2rem;
+  }
+  .evento-motivo { grid-column: 2 / -1; }
+}
