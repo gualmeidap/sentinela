@@ -62,7 +62,7 @@ flowchart LR
 |---|---|---|---|
 | `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | não iniciado |
 | `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em EC2 | disponibilidade no ar (local) |
-| `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | não iniciado |
+| `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | painel lendo a API local |
 | — | Persistência | DynamoDB | não iniciado |
 
 **As peças não se chamam entre si.** O banco é o único ponto de encontro: o
@@ -86,7 +86,10 @@ sentinela/
 │       │   └── ping/
 │       └── test/java/com/sentinela/api/
 ├── coletor/                  reservado — passo 5
-└── web/                      reservado — passos 2 e 6
+└── web/                      painel estático, sem build
+    ├── index.html
+    ├── estilo.css
+    └── painel.js
 ```
 
 ## Decisões
@@ -129,6 +132,18 @@ servidor-a"` e `"Connection refused to servidor-b"` são duas strings diferentes
 e uma única causa. Com código fechado, três falhas pelo mesmo motivo aparecem como
 "3 falhas, todas pela mesma dependência indisponível" — que é a informação útil.
 "3 falhas" não é.
+
+### Por que a página não tem framework
+
+O painel é HTML, CSS e JavaScript puros. Não é purismo: o destino dele é ser
+arquivo estático servido pelo CloudFront, e um framework acrescentaria um passo
+de build entre escrever e publicar — mais uma coisa para quebrar, versionar e
+manter, em troca de conveniência que uma tela com três cartões não precisa.
+
+A regra de negócio também não está lá. Fita, percentual e estado de bloco são
+calculados na API; a página só desenha o que recebe. Se o cálculo vivesse no
+JavaScript, ele teria de ser reescrito e testado de novo em qualquer outro
+consumidor — e sairia do alcance dos testes automatizados.
 
 ### Por que o banco é o único ponto de encontro
 
@@ -227,6 +242,21 @@ No PowerShell, use `.\mvnw.cmd spring-boot:run`. A aplicação sobe em
 curl http://localhost:8080/sistemas
 ```
 
+### O painel
+
+Sirva a pasta `web/` em qualquer servidor estático. A porta 5500 é a que já vem
+autorizada no CORS da API:
+
+```bash
+python -m http.server 5500 --directory web --bind 127.0.0.1
+```
+
+E abra `http://127.0.0.1:5500`.
+
+A API só entrega resposta às origens declaradas em `sentinela.origens-permitidas`,
+no `application.yml`. Se você servir a página em outra porta, acrescente a origem
+lá — senão o navegador recusa a resposta e a página exibe o aviso de conexão.
+
 No perfil `local`, que é o padrão, a aplicação semeia 24 h de verificações
 sintéticas na subida — o coletor que gera medição de verdade só existe no passo
 5. Sem isso os endpoints responderiam corretamente uma tela vazia, e não daria
@@ -246,7 +276,7 @@ Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar lo
 
 - [x] **1.** Spring Boot local, banco local, lista de sistemas fixa no código,
       endpoints de disponibilidade respondendo
-- [ ] **2.** Página simples lendo da API local
+- [x] **2.** Página simples lendo da API local
 - [ ] **3.** `POST /eventos` funcionando local, eventos enviados na mão via curl
 - [ ] **4.** Troca do banco local para DynamoDB
 - [ ] **5.** Coletor em Java puro, local primeiro, depois em Lambda com EventBridge
