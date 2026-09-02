@@ -1,0 +1,217 @@
+/*
+ * Cores declaradas como variaveis para o tema escuro trocar so os valores, sem
+ * repetir regra. O painel e feito para ficar aberto num monitor o dia inteiro,
+ * entao o contraste importa mais que a decoracao.
+ */
+:root {
+  --fundo: #f6f7f9;
+  --superficie: #ffffff;
+  --borda: #e2e5ea;
+  --texto: #1a1d21;
+  --texto-fraco: #6b7280;
+  --disponivel: #16a34a;
+  --degradado: #d97706;
+  --indisponivel: #dc2626;
+  --sem-dado: #cbd5e1;
+  --aviso-fundo: #fef2f2;
+  --aviso-borda: #fecaca;
+  --aviso-texto: #991b1b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #0f1216;
+    --superficie: #171b21;
+    --borda: #262c35;
+    --texto: #e6e9ee;
+    --texto-fraco: #9aa4b2;
+    --disponivel: #22c55e;
+    --degradado: #f59e0b;
+    --indisponivel: #ef4444;
+    --sem-dado: #374151;
+    --aviso-fundo: #2a1416;
+    --aviso-borda: #7f1d1d;
+    --aviso-texto: #fca5a5;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 2rem 1.25rem 3rem;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+.cabecalho,
+.painel,
+.rodape,
+.aviso {
+  max-width: 60rem;
+  margin-inline: auto;
+}
+
+.cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.cabecalho h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+}
+
+.subtitulo {
+  margin: 0.15rem 0 0;
+  color: var(--texto-fraco);
+  font-size: 0.9rem;
+}
+
+.atualizacao {
+  margin: 0;
+  color: var(--texto-fraco);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.aviso {
+  margin-bottom: 1.5rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--aviso-borda);
+  border-radius: 8px;
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+  font-size: 0.9rem;
+}
+
+.oculto { display: none; }
+
+.painel {
+  display: grid;
+  gap: 1rem;
+}
+
+.cartao {
+  padding: 1.1rem 1.25rem 1.25rem;
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  background: var(--superficie);
+}
+
+.cartao-topo {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.indicador {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 0.42rem;
+  border-radius: 50%;
+  background: var(--sem-dado);
+}
+
+.indicador.no-ar { background: var(--disponivel); }
+.indicador.fora-do-ar { background: var(--indisponivel); }
+
+.cartao-identidade { flex: 1 1 auto; min-width: 0; }
+
+.cartao-identidade h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.url {
+  margin: 0.1rem 0 0;
+  overflow: hidden;
+  color: var(--texto-fraco);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cartao-numeros {
+  flex: none;
+  text-align: right;
+}
+
+.tempo {
+  margin: 0;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.percentual {
+  margin: 0.1rem 0 0;
+  color: var(--texto-fraco);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A fita: 96 blocos dividindo a largura disponivel em partes iguais. */
+.fita {
+  display: flex;
+  gap: 2px;
+  height: 34px;
+}
+
+.bloco {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 2px;
+  background: var(--sem-dado);
+}
+
+.bloco.disponivel { background: var(--disponivel); }
+.bloco.degradado { background: var(--degradado); }
+.bloco.indisponivel { background: var(--indisponivel); }
+
+.eixo {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.4rem;
+  color: var(--texto-fraco);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rodape {
+  margin-top: 2rem;
+  color: var(--texto-fraco);
+  font-size: 0.78rem;
+}
+
+.legenda { margin: 0 0 0.35rem; }
+.nota { margin: 0; opacity: 0.8; }
+
+.amostra {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 0.15rem 0 0.6rem;
+  border-radius: 2px;
+  vertical-align: baseline;
+}
+
+.amostra.disponivel { background: var(--disponivel); }
+.amostra.degradado { background: var(--degradado); }
+.amostra.indisponivel { background: var(--indisponivel); }
+.amostra.sem-dado { background: var(--sem-dado); }
+
+.esqueleto {
+  color: var(--texto-fraco);
+  font-size: 0.9rem;
+}

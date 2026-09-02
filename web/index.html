@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sentinela</title>
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <header class="cabecalho">
+    <div class="cabecalho-texto">
+      <h1>Sentinela</h1>
+      <p class="subtitulo">Disponibilidade dos sistemas nas ultimas 24 horas</p>
+    </div>
+    <p class="atualizacao" id="atualizacao">carregando...</p>
+  </header>
+
+  <div class="aviso oculto" id="aviso" role="alert"></div>
+
+  <main class="painel" id="painel"></main>
+
+  <footer class="rodape">
+    <p class="legenda">
+      Cada bloco e uma janela de 15 minutos.
+      <span class="amostra disponivel"></span> no ar
+      <span class="amostra degradado"></span> degradado
+      <span class="amostra indisponivel"></span> fora do ar
+      <span class="amostra sem-dado"></span> sem dado
+    </p>
+    <p class="nota">
+      Instancia de demonstracao: os alvos sao ficticios e as verificacoes, sinteticas.
+    </p>
+  </footer>
+
+  <script src="painel.js"></script>
+</body>
+</html>
