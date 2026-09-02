@@ -61,7 +61,7 @@ flowchart LR
 
 | Peça | O que faz | Tecnologia | Estado |
 |---|---|---|---|
-| `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | não iniciado |
+| `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | verificando local |
 | `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em EC2 | disponibilidade no ar (local) |
 | `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | painel lendo a API local |
 | — | Persistência | DynamoDB | não iniciado |
@@ -86,7 +86,11 @@ sentinela/
 │       │   ├── dev/              semeador de dados sintéticos (perfil local)
 │       │   └── ping/
 │       └── test/java/com/sentinela/api/
-├── coletor/                  reservado — passo 5
+├── coletor/                  Java puro, zero dependências de execução
+│   ├── mvnw, mvnw.cmd
+│   ├── pom.xml
+│   ├── alvos.exemplo.properties
+│   └── src/main/java/com/sentinela/coletor/
 └── web/                      painel estático, sem build
     ├── index.html
     ├── estilo.css
@@ -154,6 +158,27 @@ casar com `^[a-z0-9][a-z0-9_.-]{0,39}$`.
 
 `unidade_2` passa. `Joao da Silva` e `joao@exemplo.com` não. É uma barreira
 estrutural, não um pedido de boa vontade ao publicador.
+
+### Por que o coletor não tem nenhuma dependência
+
+O `coletor/` declara zero dependências de execução — nem uma. Cliente HTTP,
+leitura de configuração e concorrência já vêm no JDK 21.
+
+O motivo é custo: ele roda numa Lambda a cada 5 minutos, e cada jar no classpath
+vira tempo de cold start em toda invocação. É a mesma razão de não usar Spring
+aqui, levada até o fim.
+
+Os alvos são verificados em paralelo com **threads virtuais** do Java 21. A
+espera é de rede, não de processamento; em série, dez alvos custariam a soma de
+dez esperas — e a Lambda cobra por tempo de execução.
+
+### Por que o coletor duplica a classe `Verificacao`
+
+Ela é quase igual à do `api/`, e a duplicação é deliberada. Um jar compartilhado
+entre as duas peças viraria, com o tempo, um caminho de acoplamento: uma mudança
+no formato de leitura da API poderia quebrar o coletor rodando em produção sem
+ninguém ter tocado nele. As peças se encontram no banco e em nenhum outro lugar
+— inclusive no código.
 
 ### Por que a página não tem framework
 
@@ -275,6 +300,33 @@ No PowerShell, use `.\mvnw.cmd spring-boot:run`. A aplicação sobe em
 curl http://localhost:8080/sistemas
 ```
 
+### O coletor
+
+Requer apenas Java 21. A lista de alvos **nunca** vem do repositório: copie
+`coletor/alvos.exemplo.properties` para `alvos.properties` (bloqueado no
+`.gitignore`) e edite.
+
+```bash
+cd coletor && ./mvnw -q package && java -jar target/sentinela-coletor-0.0.1-SNAPSHOT.jar alvos.properties
+```
+
+Saída de uma rodada:
+
+```
+verificando 3 alvo(s), tempo limite de 5000 ms
+  22:24:32  alvo-fora-do-ar         FORA         91 ms  CONEXAO_RECUSADA
+  22:24:32  sentinela-api           no ar       112 ms  HTTP 200
+  22:24:32  sentinela-painel        no ar       113 ms  HTTP 200
+  3 alvo(s) verificado(s), 1 fora do ar
+```
+
+Na Lambda não há disco para arquivo de configuração, então a lista vem da
+variável de ambiente `SENTINELA_ALVOS`, no formato `id=url;id=url`. O tempo
+limite sai de `SENTINELA_TIMEOUT_MS` (padrão 5000).
+
+Por enquanto o coletor só imprime o resultado: ele e a API se encontram no banco,
+e o banco compartilhado só existe a partir do passo 4.
+
 ### O painel
 
 Sirva a pasta `web/` em qualquer servidor estático. A porta 5500 é a que já vem
@@ -312,7 +364,9 @@ Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar lo
 - [x] **2.** Página simples lendo da API local
 - [x] **3.** `POST /eventos` funcionando local, eventos enviados na mão via curl
 - [ ] **4.** Troca do banco local para DynamoDB
-- [ ] **5.** Coletor em Java puro, local primeiro, depois em Lambda com EventBridge
+- [ ] **5.** Coletor em Java puro, local primeiro, depois em Lambda com
+      EventBridge — *local pronto: verifica em paralelo, classifica cada modo de
+      falha e imprime a rodada; falta a Lambda*
 - [ ] **6.** Deploy: API na EC2, página no S3 com CloudFront
 - [ ] **7.** Publicação de eventos reais pelo sistema de origem
 

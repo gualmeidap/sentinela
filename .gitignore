@@ -21,6 +21,8 @@ application-privado.*
 .env.*
 alvos*.yml
 alvos*.json
+alvos*.properties
+!alvos.exemplo.properties
 # ---------------------------------------------------------------------------
 
 # IDEs

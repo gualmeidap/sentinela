@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.sentinela</groupId>
+  <artifactId>sentinela-coletor</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>sentinela-coletor</name>
+  <description>Verifica a cada 5 minutos se cada sistema monitorado responde</description>
+
+  <!--
+    Projeto independente do api/, e nao um modulo dele. As duas pecas nao
+    compartilham codigo de proposito: elas se encontram no banco e em nenhum
+    outro lugar. Um jar comum entre as duas viraria, com o tempo, um caminho
+    de acoplamento por onde a mudanca de uma quebra a outra.
+
+    Sem spring-boot-starter-parent, cada versao e declarada a mao aqui. Sao as
+    mesmas que o api/ ja resolve, para nao haver duas combinacoes de
+    biblioteca de teste no mesmo repositorio.
+  -->
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <junit.version>6.0.3</junit.version>
+    <assertj.version>3.27.7</assertj.version>
+  </properties>
+
+  <!--
+    Nenhuma dependencia de execucao. Nem uma.
+
+    O coletor roda numa Lambda a cada 5 minutos, e cada jar no classpath e
+    tempo de cold start em toda invocacao. Cliente HTTP, leitura de
+    configuracao e concorrencia ja vem no JDK 21 - nao ha o que acrescentar.
+  -->
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.15.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.6</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.1</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>com.sentinela.coletor.Coletor</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
