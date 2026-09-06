@@ -23,7 +23,22 @@
   <properties>
     <java.version>21</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <aws.sdk.version>2.54.13</aws.sdk.version>
   </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- O BOM da AWS alinha as versoes de todos os modulos do SDK entre si,
+           do mesmo jeito que o spring-boot-starter-parent faz com o Spring. -->
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${aws.sdk.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <dependencies>
     <!-- Traz Spring MVC + Tomcat embutido + Jackson (JSON). E o que faz a
@@ -40,6 +55,28 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
+    </dependency>
+
+    <!-- Cliente do DynamoDB. O netty-nio-client vem por padrao e nao e usado
+         aqui: a API e sincrona, entao o cliente HTTP simples do JDK basta e
+         evita carregar um servidor de rede inteiro a toa. -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>dynamodb</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>netty-nio-client</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>apache5-client</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>url-connection-client</artifactId>
     </dependency>
 
     <!-- Anotacoes de fatia de teste do MVC (@WebMvcTest). No Spring Boot 4 elas
