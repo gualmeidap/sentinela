@@ -7,12 +7,14 @@ import com.sentinela.api.persistencia.ApoioDynamoLocal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 /**
  * O repositorio de verificacoes contra um DynamoDB de verdade.
@@ -118,6 +120,36 @@ class RepositorioDeVerificacoesDynamoTest {
     void sistemaSemVerificacao() {
         assertThat(repositorio.ultima("sistema-que-nunca-foi-verificado")).isEmpty();
         assertThat(repositorio.entre("sistema-que-nunca-foi-verificado", BASE, BASE.plusSeconds(3600))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("item gravado pelo coletor, com campos que a API nao conhece, e lido sem quebrar")
+    void leItemNoFormatoDoColetor() {
+        String sistema = "sistema-do-coletor";
+        Instant momento = Instant.parse("2026-09-07T21:00:00Z");
+
+        // Reproduz exatamente o que o coletor grava numa falha: alem dos campos
+        // que a API conhece, ele guarda o motivo, o tempo decorrido ate desistir
+        // e, quando ha, o status HTTP.
+        //
+        // O tempo em falha ja derrubou a API com 500 uma vez: a Verificacao
+        // recusa "nao respondeu com tempo de resposta", e o coletor grava
+        // justamente isso. Este teste existe para essa combinacao nao voltar.
+        cliente.putItem(pedido -> pedido.tableName(propriedades.tabelaVerificacoes()).item(Map.of(
+                "sistemaId", AttributeValue.fromS(sistema),
+                "momento", AttributeValue.fromS("2026-09-07T21:00:00.000Z"),
+                "respondeu", AttributeValue.fromBool(false),
+                "tempoRespostaMs", AttributeValue.fromN("5000"),
+                "motivo", AttributeValue.fromS("TEMPO_ESGOTADO"),
+                "expiraEm", AttributeValue.fromN("1791500000"))));
+
+        List<Verificacao> lidas = repositorio.entre(sistema, momento, momento.plusSeconds(60));
+
+        assertThat(lidas).hasSize(1);
+        assertThat(lidas.get(0).respondeu()).isFalse();
+        assertThat(lidas.get(0).tempoRespostaMs())
+                .as("tempo ate desistir nao e tempo de resposta, e nao pode aparecer como tal")
+                .isNull();
     }
 
     @Test

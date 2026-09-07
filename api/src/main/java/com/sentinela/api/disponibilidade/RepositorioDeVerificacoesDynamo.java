@@ -103,16 +103,31 @@ public class RepositorioDeVerificacoesDynamo implements RepositorioDeVerificacoe
     }
 
     private Verificacao paraVerificacao(Map<String, AttributeValue> item) {
+        boolean respondeu = Boolean.TRUE.equals(item.get(CAMPO_RESPONDEU).bool());
         AttributeValue tempo = item.get(CAMPO_TEMPO);
+
         return new Verificacao(
                 item.get(CriadorDeTabelas.PARTICAO_VERIFICACAO).s(),
                 Chaves.paraInstante(item.get(CriadorDeTabelas.ORDENACAO_VERIFICACAO).s()),
-                Boolean.TRUE.equals(item.get(CAMPO_RESPONDEU).bool()),
-                tempo == null ? null : Integer.valueOf(tempo.n()));
-        // Campos que o coletor grave e a API ainda nao leia -- o motivo da
-        // falha, por exemplo -- sao simplesmente ignorados aqui. O DynamoDB nao
-        // tem esquema fixo, entao as duas pecas podem evoluir em ritmos
-        // diferentes sem uma quebrar a outra.
+                respondeu,
+                // O tempo so e lido quando o alvo respondeu, mesmo que o item
+                // traga um valor em caso de falha.
+                //
+                // O coletor grava o tempo decorrido tambem nas falhas, de
+                // proposito: 5000 ms de tempo esgotado e informacao diferente de
+                // 30 ms de conexao recusada. Mas isso e "quanto se esperou ate
+                // desistir", nao tempo de resposta -- e o painel mostra esse
+                // campo como tempo de resposta. Exibir 5000 ms ao lado de um
+                // indicador vermelho faria a tela mentir.
+                //
+                // As duas pecas estavam certas isoladamente e incompativeis
+                // juntas. Como o banco e o unico contrato entre elas, a
+                // conciliacao acontece aqui, na leitura.
+                respondeu && tempo != null ? Integer.valueOf(tempo.n()) : null);
+
+        // Campos que o coletor grave e a API nao leia -- o motivo da falha, o
+        // status HTTP -- sao ignorados sem quebrar nada. O DynamoDB nao tem
+        // esquema fixo, entao as pecas evoluem em ritmos diferentes.
     }
 
     private static AttributeValue texto(String valor) {

@@ -61,7 +61,7 @@ flowchart LR
 
 | Peça | O que faz | Tecnologia | Estado |
 |---|---|---|---|
-| `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | verificando local |
+| `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | gravando no banco (local) |
 | `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em EC2 | disponibilidade no ar (local) |
 | `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | painel lendo a API local |
 | — | Persistência | DynamoDB | gravando e lendo (local) |
@@ -86,7 +86,7 @@ sentinela/
 │       │   ├── dev/              semeador de dados sintéticos (perfil local)
 │       │   └── ping/
 │       └── test/java/com/sentinela/api/
-├── coletor/                  Java puro, zero dependências de execução
+├── coletor/                  Java puro, sem Spring
 │   ├── mvnw, mvnw.cmd
 │   ├── pom.xml
 │   ├── alvos.exemplo.properties
@@ -200,26 +200,48 @@ do limite gratuito.
 **TTL nativo:** cada item carrega a data em que deve expirar, e o DynamoDB apaga
 sozinho — sem rotina de limpeza para escrever nem manter.
 
-### Por que o coletor não tem nenhuma dependência
+### Quantas dependências o coletor carrega, e por quê
 
-O `coletor/` declara zero dependências de execução — nem uma. Cliente HTTP,
-leitura de configuração e concorrência já vêm no JDK 21.
+Até o passo 4 o coletor declarava **zero** dependências de execução: cliente
+HTTP, leitura de configuração e concorrência já vêm no JDK 21. O jar tinha 17 KB.
 
-O motivo é custo: ele roda numa Lambda a cada 5 minutos, e cada jar no classpath
-vira tempo de cold start em toda invocação. É a mesma razão de não usar Spring
-aqui, levada até o fim.
+Para gravar no DynamoDB isso não se sustenta. O protocolo exige assinatura
+SigV4, e implementar criptografia à mão para economizar biblioteca seria uma
+troca ruim. O SDK entrou, e o jar foi para **6,9 MB** — cerca de **700 ms** a
+mais na partida, que numa função invocada a cada 5 minutos é custo permanente.
 
-Os alvos são verificados em paralelo com **threads virtuais** do Java 21. A
-espera é de rede, não de processamento; em série, dez alvos custariam a soma de
-dez esperas — e a Lambda cobra por tempo de execução.
+O que dá para fazer é cortar o supérfluo. O SDK traz por padrão dois clientes
+HTTP (Netty e Apache), ambos servidores de rede completos; a Lambda faz poucas
+chamadas síncronas, então ambos foram excluídos em favor do cliente simples do
+JDK.
 
-### Por que o coletor duplica a classe `Verificacao`
+Os alvos continuam sendo verificados em paralelo com **threads virtuais** do
+Java 21. A espera é de rede, não de processamento; em série, dez alvos custariam
+a soma de dez esperas — e a Lambda cobra por tempo de execução.
 
-Ela é quase igual à do `api/`, e a duplicação é deliberada. Um jar compartilhado
-entre as duas peças viraria, com o tempo, um caminho de acoplamento: uma mudança
-no formato de leitura da API poderia quebrar o coletor rodando em produção sem
-ninguém ter tocado nele. As peças se encontram no banco e em nenhum outro lugar
-— inclusive no código.
+### Por que o coletor duplica código da API
+
+A classe `Verificacao` e o formato das chaves são quase iguais aos do `api/`, e a
+duplicação é deliberada. Um jar compartilhado entre as duas peças viraria, com o
+tempo, um caminho de acoplamento: uma mudança no formato de leitura da API
+poderia quebrar o coletor rodando em produção sem ninguém ter tocado nele.
+
+O preço dessa escolha é real e vale nomear: **o único contrato entre as peças é
+o formato do item no banco**, e ele pode divergir sem nada quebrar visivelmente —
+o coletor grava, a API não acha, e o painel fica vazio sem uma linha de erro.
+
+Por isso o formato literal da chave (`2026-09-01T10:00:00.000Z`) está fixado em
+teste dos **dois** lados, e há um teste na API que lê um item escrito no formato
+exato do coletor.
+
+Esse teste não é hipotético: quando as peças se encontraram pela primeira vez, a
+API respondeu `500`. O coletor grava o tempo decorrido também nas falhas — 5000 ms
+de tempo esgotado é informação diferente de 30 ms de conexão recusada — e o
+modelo da API recusa "não respondeu com tempo de resposta". As duas estavam
+certas isoladamente e incompatíveis juntas. A conciliação ficou na leitura: o
+tempo só é lido quando o alvo respondeu, porque "quanto se esperou até desistir"
+não é tempo de resposta, e mostrar `5000 ms` ao lado de um indicador vermelho
+faria a tela mentir.
 
 ### Por que a página não tem framework
 
@@ -387,6 +409,21 @@ no contexto — dá para rodar a aplicação e a suíte inteira sem banco nenhum
 perto. Os testes de integração são pulados quando o DynamoDB Local não está no
 ar; no CI ele sobe pelo mesmo `docker-compose.yml`, então lá eles sempre rodam.
 
+### O coletor gravando no banco
+
+Com o DynamoDB Local no ar, o coletor deixa de só imprimir:
+
+```bash
+cd coletor && SENTINELA_DYNAMO_TABELA=sentinela-verificacoes SENTINELA_DYNAMO_ENDPOINT=http://localhost:8000 java -jar target/sentinela-coletor-0.0.1-SNAPSHOT.jar alvos.properties
+```
+
+Sem a variável `SENTINELA_DYNAMO_TABELA` ele apenas imprime, como antes. Com
+ela, faz as duas coisas — e na Lambda o que vai para a saída padrão cai no
+CloudWatch Logs, então imprimir continua útil.
+
+Use no `alvos.properties` os mesmos ids do catálogo da API, senão o painel não
+tem onde mostrar o que foi medido.
+
 ### O painel
 
 Sirva a pasta `web/` em qualquer servidor estático. A porta 5500 é a que já vem
@@ -423,10 +460,10 @@ Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar lo
       endpoints de disponibilidade respondendo
 - [x] **2.** Página simples lendo da API local
 - [x] **3.** `POST /eventos` funcionando local, eventos enviados na mão via curl
-- [ ] **4.** Troca do banco local para DynamoDB
+- [x] **4.** Troca do banco local para DynamoDB
 - [ ] **5.** Coletor em Java puro, local primeiro, depois em Lambda com
       EventBridge — *local pronto: verifica em paralelo, classifica cada modo de
-      falha e imprime a rodada; falta a Lambda*
+      falha e grava no DynamoDB; falta a Lambda*
 - [ ] **6.** Deploy: API na EC2, página no S3 com CloudFront
 - [ ] **7.** Publicação de eventos reais pelo sistema de origem
 
