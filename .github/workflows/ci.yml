@@ -74,6 +74,13 @@ jobs:
           distribution: temurin
           cache: maven
 
+      # O coletor tambem grava no DynamoDB desde o passo 4, entao ele precisa
+      # do banco tanto quanto a API. Sem este passo, os testes de integracao
+      # daqui seriam pulados em silencio e o job ficaria verde sem te-los
+      # executado.
+      - name: Subir o DynamoDB Local
+        run: docker compose up -d --wait
+
       - name: Rodar os testes
         working-directory: coletor
         run: ./mvnw -B --no-transfer-progress verify
