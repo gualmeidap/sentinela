@@ -86,6 +86,20 @@ public final class Chaves {
         return deInstante(momento);
     }
 
+    /**
+     * Limite superior de faixa para chave SIMPLES, onde a chave e so o instante
+     * (o caso das verificacoes).
+     *
+     * Na chave composta, "fim" sem separador ja fica abaixo de qualquer
+     * "fim#id", e a faixa se fecha sozinha. Aqui nao: a chave do item e
+     * exatamente o instante, entao um item gravado em "fim" cairia dentro do
+     * BETWEEN, que e inclusivo. Recuar um milissegundo -- a menor unidade que a
+     * chave representa -- e o que torna a faixa [inicio, fim).
+     */
+    public static String fimSimplesExclusivo(Instant momento) {
+        return deInstante(momento.minusMillis(1));
+    }
+
     /** Momento em que o item deve sumir sozinho, em segundos desde 1970 (formato do TTL). */
     public static long expiraEm(Instant momento, Duration retencao) {
         return momento.plus(retencao).getEpochSecond();

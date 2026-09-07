@@ -53,3 +53,17 @@ sentinela:
       chaves-de-contexto:
         - campus
         - canal
+
+  # Acesso ao DynamoDB. Só entra em uso com o perfil "dynamo" ativo.
+  dynamo:
+    # Vazio = DynamoDB de verdade, na regiao configurada. Preenchido = aponta
+    # para outro endereco, que localmente e o DynamoDB Local do docker-compose.
+    endpoint: ${SENTINELA_DYNAMO_ENDPOINT:}
+    regiao: ${AWS_REGION:us-east-1}
+    tabela-verificacoes: sentinela-verificacoes
+    tabela-eventos: sentinela-eventos
+    retencao-dias: 30
+    # Criar tabela na subida e conveniencia de ambiente local. Na AWS a tabela
+    # e criada uma vez por infraestrutura, e a aplicacao nao deve ter permissao
+    # para criar nada.
+    criar-tabelas: ${SENTINELA_DYNAMO_CRIAR_TABELAS:false}

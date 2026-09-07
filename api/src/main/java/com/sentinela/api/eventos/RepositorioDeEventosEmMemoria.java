@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Repository;
  * dias vai expirar registro sozinho, sem rotina de limpeza para manter.
  */
 @Repository
+@Profile("!dynamo")
 public class RepositorioDeEventosEmMemoria implements RepositorioDeEventos {
 
     private static final Comparator<Evento> POR_MOMENTO = Comparator.comparing(Evento::ocorridoEm);

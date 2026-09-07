@@ -1,0 +1,28 @@
+# DynamoDB Local: uma copia do DynamoDB que roda na sua maquina.
+#
+# Serve para desenvolver e testar o passo 4 sem conta AWS e sem custo nenhum.
+# E o mesmo banco da AWS, mesmo protocolo e mesma API -- muda so o endereco para
+# onde a aplicacao aponta.
+#
+#   docker compose up -d      sobe
+#   docker compose down       derruba
+#
+# Nada aqui vai para producao: na AWS o DynamoDB e um servico gerenciado, sem
+# container nenhum para manter.
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:3.3.1
+    container_name: sentinela-dynamodb
+    ports:
+      - "8000:8000"
+    # -sharedDb: sem isto, o DynamoDB Local cria um banco separado para cada
+    #   combinacao de credencial e regiao, e voce grava numa tabela e le de
+    #   outra sem entender por que ela aparece vazia.
+    # -inMemory: os dados vivem enquanto o container viver. Para desenvolver e
+    #   o que se quer -- recomecar limpo e so derrubar e subir de novo.
+    command: -jar DynamoDBLocal.jar -sharedDb -inMemory
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8000 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

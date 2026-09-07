@@ -96,6 +96,21 @@ class ChavesTest {
         assertThat(dentro(vespera, inicio, fim)).isFalse();
     }
 
+    @Test
+    @DisplayName("na chave simples, a faixa tambem exclui o instante final")
+    void faixaSimplesTambemEhSemiaberta() {
+        String inicio = Chaves.deInstante(Instant.parse("2026-09-01T00:00:00Z"));
+        String fim = Chaves.fimSimplesExclusivo(Instant.parse("2026-09-02T00:00:00Z"));
+
+        String primeiro = Chaves.deInstante(Instant.parse("2026-09-01T00:00:00Z"));
+        String ultimo = Chaves.deInstante(Instant.parse("2026-09-01T23:59:59.999Z"));
+        String jaEhOutroDia = Chaves.deInstante(Instant.parse("2026-09-02T00:00:00Z"));
+
+        assertThat(dentro(primeiro, inicio, fim)).isTrue();
+        assertThat(dentro(ultimo, inicio, fim)).isTrue();
+        assertThat(dentro(jaEhOutroDia, inicio, fim)).isFalse();
+    }
+
     /** Reproduz o "between" do DynamoDB, que e inclusivo nas duas pontas. */
     private boolean dentro(String chave, String inicio, String fim) {
         return chave.compareTo(inicio) >= 0 && chave.compareTo(fim) <= 0;

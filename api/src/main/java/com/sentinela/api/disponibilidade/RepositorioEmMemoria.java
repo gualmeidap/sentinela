@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Repository;
  * silenciosa sob carga.
  */
 @Repository
+@Profile("!dynamo")
 public class RepositorioEmMemoria implements RepositorioDeVerificacoes {
 
     private final Map<String, List<Verificacao>> porSistema = new ConcurrentHashMap<>();

@@ -40,6 +40,15 @@ jobs:
           # Spring Boot inteiro de novo.
           cache: maven
 
+      # Sobe o DynamoDB Local pelo mesmo docker-compose.yml usado na maquina de
+      # desenvolvimento. Reaproveitar o arquivo evita a divergencia classica:
+      # o CI testa contra uma configuracao e o desenvolvedor contra outra.
+      #
+      # Sem este passo os testes de integracao seriam PULADOS no CI, e o
+      # "pula se o banco nao estiver no ar" viraria desculpa para nunca testar.
+      - name: Subir o DynamoDB Local
+        run: docker compose up -d --wait
+
       - name: Rodar os testes
         working-directory: api
         run: ./mvnw -B --no-transfer-progress verify

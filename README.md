@@ -64,7 +64,7 @@ flowchart LR
 | `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | verificando local |
 | `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em EC2 | disponibilidade no ar (local) |
 | `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | painel lendo a API local |
-| — | Persistência | DynamoDB | não iniciado |
+| — | Persistência | DynamoDB | gravando e lendo (local) |
 
 **As peças não se chamam entre si.** O banco é o único ponto de encontro: o
 coletor escreve, a API lê. Uma peça fora do ar não derruba a outra, e cada uma
@@ -91,6 +91,7 @@ sentinela/
 │   ├── pom.xml
 │   ├── alvos.exemplo.properties
 │   └── src/main/java/com/sentinela/coletor/
+├── docker-compose.yml        DynamoDB Local para desenvolver
 └── web/                      painel estático, sem build
     ├── index.html
     ├── estilo.css
@@ -158,6 +159,46 @@ casar com `^[a-z0-9][a-z0-9_.-]{0,39}$`.
 
 `unidade_2` passa. `Joao da Silva` e `joao@exemplo.com` não. É uma barreira
 estrutural, não um pedido de boa vontade ao publicador.
+
+### Como as tabelas do DynamoDB foram modeladas
+
+Em banco relacional você modela os dados e depois escreve qualquer consulta. No
+DynamoDB é o contrário: **a tabela é desenhada em função das consultas**, porque
+o que a chave não atende exige varrer a tabela inteira — que é o que fica lento
+e caro conforme o histórico cresce.
+
+Toda pergunta do painel tem a forma *"do sistema X, entre tal e tal hora"*, e as
+chaves saem direto disso:
+
+| | Verificações | Eventos |
+|---|---|---|
+| Partição | `sistemaId` | `sistema` |
+| Ordenação | `momento` | `momento#identificador` |
+
+Nenhuma consulta precisa de varredura. A fita de 24 h é uma faixa de ordenação;
+a última verificação é a mesma partição em ordem invertida com limite 1.
+
+**São duas tabelas, e não uma.** Existe a técnica de *single-table design*, que
+junta tudo numa tabela só; ela vale quando uma única consulta precisa trazer
+entidades de tipos diferentes de uma vez. Aqui disponibilidade e eventos são
+sempre consultados separadamente, então ela cobraria complexidade sem entregar
+nada.
+
+**As chaves de ordenação são diferentes de propósito.** Na verificação, a chave
+é só o momento: se o coletor rodar duas vezes no mesmo instante, a segunda
+escrita substitui a primeira, e a gravação vira idempotente sem uma linha de
+código — o que importa quando o coletor for uma Lambda, que pode ser invocada
+duas vezes para o mesmo disparo. No evento, a chave carrega um identificador
+junto: dois eventos podem acontecer no mesmo milissegundo, e ali sobrescrever
+seria perder dado sem nenhum erro aparecer.
+
+**Capacidade provisionada, não sob demanda.** O Always Free cobre 25 unidades de
+leitura e 25 de escrita provisionadas; o modo sob demanda é cobrado por
+requisição. Com 5 de cada por tabela sobra folga larga e o total fica bem abaixo
+do limite gratuito.
+
+**TTL nativo:** cada item carrega a data em que deve expirar, e o DynamoDB apaga
+sozinho — sem rotina de limpeza para escrever nem manter.
 
 ### Por que o coletor não tem nenhuma dependência
 
@@ -326,6 +367,25 @@ limite sai de `SENTINELA_TIMEOUT_MS` (padrão 5000).
 
 Por enquanto o coletor só imprime o resultado: ele e a API se encontram no banco,
 e o banco compartilhado só existe a partir do passo 4.
+
+### Com DynamoDB em vez de memória
+
+Sobe uma cópia do DynamoDB na sua máquina — sem conta AWS e sem custo:
+
+```bash
+docker compose up -d
+```
+
+E a API apontando para ela:
+
+```bash
+cd api && SPRING_PROFILES_ACTIVE=local,dynamo SENTINELA_DYNAMO_ENDPOINT=http://localhost:8000 SENTINELA_DYNAMO_CRIAR_TABELAS=true ./mvnw spring-boot:run
+```
+
+Sem o perfil `dynamo`, valem os repositórios em memória e o SDK da AWS nem entra
+no contexto — dá para rodar a aplicação e a suíte inteira sem banco nenhum por
+perto. Os testes de integração são pulados quando o DynamoDB Local não está no
+ar; no CI ele sobe pelo mesmo `docker-compose.yml`, então lá eles sempre rodam.
 
 ### O painel
 
