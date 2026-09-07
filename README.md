@@ -48,7 +48,7 @@ O Sentinela responde **o quê, onde, quando e com que resultado**. Nunca "com qu
 flowchart LR
     S["Sistemas monitorados"]
     C["coletor<br/>Java puro · Lambda + EventBridge"]
-    A["api<br/>Spring Boot · EC2"]
+    A["api<br/>Spring Boot · Lambda"]
     DB[("DynamoDB<br/>TTL de 30 dias")]
     W["web<br/>HTML/JS · S3 + CloudFront"]
 
@@ -61,10 +61,10 @@ flowchart LR
 
 | Peça | O que faz | Tecnologia | Estado |
 |---|---|---|---|
-| `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | gravando no banco (local) |
-| `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em EC2 | disponibilidade no ar (local) |
-| `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | painel lendo a API local |
-| — | Persistência | DynamoDB | gravando e lendo (local) |
+| `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | **no ar na AWS** |
+| `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em Lambda (Function URL) | no ar (local); deploy pronto, aguardando confirmação |
+| `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | no ar (local) |
+| — | Persistência | DynamoDB | **no ar na AWS** |
 
 **As peças não se chamam entre si.** O banco é o único ponto de encontro: o
 coletor escreve, a API lê. Uma peça fora do ar não derruba a outra, e cada uma
@@ -94,9 +94,11 @@ sentinela/
 │       └── lambda/           ponto de entrada quando roda como Lambda
 ├── docker-compose.yml        DynamoDB Local para desenvolver
 ├── infra/                    CloudFormation: o que sobe para a AWS
-│   ├── README.md             custo estimado e como remover tudo
+│   ├── README.md             custo estimado, decisões e como remover tudo
 │   ├── tabelas.yaml
 │   ├── coletor.yaml
+│   ├── api.yaml               Lambda da API atrás de uma Function URL
+│   ├── empacotar_api.py       gera o run.sh e zipa com o jar, sem mudar o build
 │   └── implantar.sh
 └── web/                      painel estático, sem build
     ├── index.html
@@ -128,9 +130,34 @@ do Spring Boot — vários segundos subindo contexto e varrendo classes — seri
 gasto em toda invocação, para inicializar uma infraestrutura que a função nem
 usa. Java puro sobe em milissegundos.
 
-A API é long-running: sobe uma vez e fica. O custo de inicialização é pago uma
-vez só, e em troca vêm injeção de dependência, serialização, validação e
-tratamento de erro prontos. Aqui o Spring paga por si.
+A API é long-running: sobe uma vez e fica — pelo menos na EC2 do plano
+original. Em troca da inicialização mais cara vêm injeção de dependência,
+serialização, validação e tratamento de erro prontos. Aqui o Spring paga por
+si.
+
+### Por que a API também virou Lambda, e não ficou em EC2
+
+O plano original era EC2, e mudou depois de revisar com calma: EC2 só é
+gratuita nos **12 meses da conta**, contados da criação — não do uso. Esta
+conta já existe há mais tempo que isso. Confirmar a data exata exigiria mais
+uma permissão de IAM só para essa checagem, e o objetivo declarado é nunca
+pagar nada — não valeu o risco de apostar errado.
+
+A solução: a mesma arquitetura Always Free que já vale para o coletor. O
+código Spring Boot **não mudou uma linha**. Quem torna isso possível é o
+[AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter),
+mantido pela AWS — uma extensão que roda ao lado da aplicação, recebe cada
+invocação da Lambda e encaminha como uma requisição HTTP comum para
+`localhost:8080`, a mesma porta de sempre. A aplicação não sabe que está numa
+Lambda; o único arquivo novo é um `run.sh` de duas linhas que dá `java -jar`
+no jar que já existia.
+
+O preço dessa escolha, para ser honesto: diferente de uma EC2 sempre ligada,
+a Lambda "esfria" depois de um tempo ociosa. Medido localmente com o mesmo
+perfil de produção, o Spring Boot leva **~7,4 segundos** até responder — a
+primeira visita ao painel depois de um período parado sente isso; visitas
+seguintes, com a função já quente, são rápidas. Trocar dinheiro incerto por
+alguns segundos ocasionais de espera foi a troca certa aqui.
 
 ### Por que evento com código fechado, e não log corrido
 
@@ -263,11 +290,13 @@ consumidor — e sairia do alcance dos testes automatizados.
 
 ### Por que o banco é o único ponto de encontro
 
-Coletor e API nunca se chamam. Se o coletor tivesse que avisar a API a cada
-verificação, uma API fora do ar viraria buraco no histórico, e a Lambda passaria
-a precisar de rota de rede até a EC2 — que na AWS é onde aparece o NAT Gateway,
-cobrado por hora só de existir. Escrevendo direto no DynamoDB, o coletor não
-depende de ninguém e o custo continua no Always Free.
+Coletor e API nunca se chamam — nem quando os dois viraram Lambda. Se o
+coletor tivesse que avisar a API a cada verificação, uma API fora do ar (ou
+fria, ainda inicializando) viraria buraco no histórico, e as duas Lambdas
+ficariam acopladas por disponibilidade uma da outra, exatamente o problema que
+"não se chamam entre si" existe para evitar. Escrevendo direto no DynamoDB, o
+coletor não depende de ninguém, e nenhuma VPC ou NAT Gateway — que cobra por
+hora só de existir — precisa entrar na conta.
 
 ## Modelo de evento
 
@@ -432,13 +461,19 @@ tem onde mostrar o que foi medido.
 
 ### Na AWS
 
-A pasta [`infra/`](infra/) descreve, em CloudFormation, o que seria criado: as
-duas tabelas, a função Lambda, o papel IAM, o agendamento de 5 em 5 minutos e o
-grupo de log com retenção fixada.
+A pasta [`infra/`](infra/) descreve, em CloudFormation, o que sobe: as duas
+tabelas, as duas funções Lambda (coletor e API), os papéis IAM, o agendamento
+de 5 em 5 minutos, o endereço público da API (Function URL) e os grupos de log
+com retenção fixada.
 
-**Custo esperado: US$ 0/mês** — o uso fica uma ou duas ordens de grandeza abaixo
-de cada limite do nível gratuito. As contas estão em [`infra/README.md`](infra/README.md),
-junto do procedimento para remover tudo.
+**Estado real, ambiente `publico`:** tabelas e coletor já rodam na conta AWS.
+A pilha da API está pronta e testada localmente, aguardando confirmação antes
+do deploy — ver [`infra/README.md`](infra/README.md) para o porquê de cada
+decisão, o custo estimado e o procedimento para remover tudo.
+
+**Custo esperado: US$ 0/mês, para sempre** — nada aqui depende da idade da
+conta. O uso fica uma ou duas ordens de grandeza abaixo de cada limite do
+nível gratuito.
 
 O script `infra/implantar.sh` mostra cada comando e pede confirmação antes de
 executar. A lista de alvos não fica em nenhum arquivo versionado: é digitada na
@@ -481,24 +516,35 @@ Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar lo
 - [x] **2.** Página simples lendo da API local
 - [x] **3.** `POST /eventos` funcionando local, eventos enviados na mão via curl
 - [x] **4.** Troca do banco local para DynamoDB
-- [ ] **5.** Coletor em Java puro, local primeiro, depois em Lambda com
-      EventBridge — *local pronto: verifica em paralelo, classifica cada modo de
-      falha e grava no DynamoDB; falta a Lambda*
-- [ ] **6.** Deploy: API na EC2, página no S3 com CloudFront
+- [x] **5.** Coletor em Java puro, local primeiro, depois em Lambda com
+      EventBridge — verifica em paralelo, classifica cada modo de falha, grava
+      no DynamoDB e **roda de verdade na AWS**, a cada 5 minutos, sozinho
+- [ ] **6.** Deploy: API em Lambda (Function URL), página no S3 com CloudFront
+      — *API pronta e testada localmente (deploy revisado, não confirmado
+      ainda); página local, S3/CloudFront pendente*
 - [ ] **7.** Publicação de eventos reais pelo sistema de origem
 
-Como parte do escopo e não como extra, já de pé: **23 testes** cobrindo cálculo
-de disponibilidade, agregação em blocos, rejeição de verificação malformada e a
-regra de CORS; e **CI no GitHub Actions** rodando tudo a cada push, num runner
-Linux — que é o que pega o que só quebra fora do Windows.
+Como parte do escopo e não como extra, já de pé: **112 testes** (79 na API, 33
+no coletor) cobrindo cálculo de disponibilidade, agregação de evento por
+motivo, limite de escrita por aplicação, rejeição de payload malformado, os
+quatro modos de falha do coletor, a regra de CORS e a leitura/escrita real
+contra DynamoDB Local; e **CI no GitHub Actions** rodando tudo a cada push, em
+dois jobs paralelos com o próprio DynamoDB Local subindo no runner Linux — que
+é o que pega o que só quebra fora do Windows.
 
-Ainda pendentes, junto das etapas que os criam: agregação de evento por motivo,
-limite de escrita por aplicação, e o tratamento explícito de alvo que não
-responde, alvo lento demais, banco recusando escrita e Lambda estourando o tempo.
+Tratamento explícito de erro cobrindo cada modo previsto no escopo: alvo que
+não responde (`TEMPO_ESGOTADO`), alvo lento demais (mesmo código, tempo
+decorrido registrado), alvo com porta fechada ou host inexistente
+(`CONEXAO_RECUSADA`), alvo respondendo com erro (`STATUS_DE_ERRO`), e chave,
+tipo, motivo ou volume inválidos em `POST /eventos`, cada um com seu próprio
+código de resposta.
 
 ## Custo
 
-Conta AWS no plano gratuito, com crédito limitado. Alerta no AWS Budgets antes
-de subir qualquer coisa. Sem NAT Gateway, que cobra por hora só de existir.
-Preferência sempre pelo que estiver no Always Free — foi o critério que decidiu
-o DynamoDB.
+Conta AWS no plano gratuito. Alerta no AWS Budgets configurado antes de subir
+qualquer recurso — inclusive um "zero-spend budget", que avisa no primeiro
+centavo. Sem NAT Gateway, que cobra por hora só de existir; sem EC2, que só é
+gratuita nos 12 meses da conta, não do uso. Preferência sempre pelo que
+estiver no Always Free — foi o critério que decidiu o DynamoDB, e depois a
+Lambda para as duas peças de código. Contas detalhadas em
+[`infra/README.md`](infra/README.md).

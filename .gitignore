@@ -1,5 +1,6 @@
 # Build Maven
 target/
+infra/build/
 *.jar
 *.war
 

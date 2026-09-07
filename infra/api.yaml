@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Sentinela - a API Spring Boot rodando como funcao Lambda, atras de uma
+  Function URL publica. Depende da pilha de tabelas.
+
+# POR QUE LAMBDA E NAO EC2, COMO O BRIEFING PREVIA ORIGINALMENTE
+#
+# EC2 so e gratuita nos primeiros 12 meses da CONTA (nao do uso). Esta conta
+# existe ha mais tempo do que isso, e o objetivo do projeto e nao pagar nada,
+# entao EC2 foi descartada -- sem verificar a data exata, porque o risco de
+# acertar errado e cobranca de verdade.
+#
+# Lambda entra no Always Free (1 milhao de invocacoes e 400 mil GB-segundo por
+# MES, PARA SEMPRE, nao 12 meses). O codigo Spring Boot em si nao muda uma
+# linha: o AWS Lambda Web Adapter e uma extensao que roda ao lado da aplicacao,
+# encaminha cada invocacao da Lambda como se fosse uma requisicao HTTP comum
+# para http://localhost:8080, e devolve a resposta. A aplicacao nem sabe que
+# esta numa Lambda.
+
+Parameters:
+  Ambiente:
+    Type: String
+    Default: publico
+    AllowedValues: [publico, privado]
+
+  BucketDoCodigo:
+    Type: String
+    Description: Mesmo bucket usado pelo coletor.
+
+  ChaveDoCodigo:
+    Type: String
+    Description: Caminho do zip da API dentro do bucket, por exemplo api/sentinela-api.zip
+
+  OrigensPermitidas:
+    Type: CommaDelimitedList
+    Description: >
+      Origens autorizadas a ler a API pelo navegador (CORS), separadas por
+      virgula. A propria aplicacao Spring ja trata CORS -- ver
+      ConfiguracaoCors.java -- entao nada e configurado na Function URL para
+      nao ter duas camadas de CORS conflitando.
+
+  MemoriaMB:
+    Type: Number
+    Default: 1024
+    AllowedValues: [512, 1024, 1536, 2048]
+    Description: >
+      Mais memoria aqui do que no coletor: subir um contexto Spring inteiro
+      (Tomcat, Jackson, todos os beans) processa mais classe e aloca mais
+      objeto do que o coletor faz. Memoria maior acelera esse momento -- que e
+      exatamente quando a Lambda esta "fria" e alguem esta esperando a tela
+      carregar.
+
+  DiasDeRetencaoDeLog:
+    Type: Number
+    Default: 7
+    AllowedValues: [1, 3, 5, 7, 14, 30]
+
+Resources:
+  # -------------------------------------------------------------------------
+  # Permissoes: leitura nas verificacoes, leitura E escrita nos eventos.
+  #
+  # A API nunca grava verificacao -- quem grava e o coletor. Ela so grava
+  # evento, atraves do POST /eventos. A separacao aqui reflete exatamente o
+  # que o codigo faz: RepositorioDeVerificacoesDynamo so chama Query;
+  # RepositorioDeEventosDynamo chama Query e PutItem.
+  # -------------------------------------------------------------------------
+  PapelDaApi:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "sentinela-${Ambiente}-api"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ler-verificacoes
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource:
+                  Fn::ImportValue: !Sub "sentinela-${Ambiente}-arn-verificacoes"
+        - PolicyName: ler-e-escrever-eventos
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                Resource:
+                  Fn::ImportValue: !Sub "sentinela-${Ambiente}-arn-eventos"
+        - PolicyName: escrever-log
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt GrupoDeLog.Arn
+      Tags:
+        - Key: projeto
+          Value: sentinela
+
+  GrupoDeLog:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/sentinela-${Ambiente}-api"
+      RetentionInDays: !Ref DiasDeRetencaoDeLog
+
+  FuncaoDaApi:
+    Type: AWS::Lambda::Function
+    DependsOn: GrupoDeLog
+    Properties:
+      FunctionName: !Sub "sentinela-${Ambiente}-api"
+      Description: API Spring Boot do Sentinela, empacotada para rodar em Lambda.
+      Runtime: java21
+      Architectures:
+        - arm64
+      # run.sh e o unico arquivo que o AWS Lambda Web Adapter exige alem do
+      # jar. Ele so precisa dar "java -jar" no jar de sempre -- nada no codigo
+      # Spring foi alterado.
+      Handler: run.sh
+      Role: !GetAtt PapelDaApi.Arn
+      MemorySize: !Ref MemoriaMB
+      # Timeout cobre a invocacao (o "handler"), nao a inicializacao. A
+      # inicializacao (subir o Spring, o Tomcat) tem orcamento proprio de ate
+      # 10s com CPU extra, controlado pelo AWS_LWA_ASYNC_INIT abaixo -- ver
+      # comentario junto dessa variavel.
+      Timeout: 30
+      Code:
+        S3Bucket: !Ref BucketDoCodigo
+        S3Key: !Ref ChaveDoCodigo
+      Layers:
+        # AWS Lambda Web Adapter, mantido pela AWS (awslabs/aws-lambda-web-adapter).
+        # E uma extensao: intercepta a invocacao da Lambda e a encaminha como
+        # requisicao HTTP para a porta que a aplicacao esta escutando. E o que
+        # permite rodar Spring Boot sem reescrever nada para o modelo de
+        # "handler" da Lambda.
+        - !Sub "arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:28"
+      Environment:
+        Variables:
+          AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+          AWS_LWA_PORT: "8080"
+          # O adapter manda GET nesse caminho ate receber uma resposta, antes
+          # de comecar a encaminhar invocacoes de verdade. /ping existe desde
+          # o passo 1 exatamente para isto: dizer "a aplicacao esta de pe".
+          AWS_LWA_READINESS_CHECK_PATH: /ping
+          # Lambda da ate 10s de inicializacao com CPU extra antes de cobrar
+          # tempo normal. Se o Spring demorar mais que isso raramente (jitter,
+          # classe carregando mais devagar que o normal), esta flag evita que
+          # a Lambda reinicie a funcao do zero -- ela deixa a checagem de
+          # prontidao continuar durante a primeira invocacao, em vez de forcar
+          # um novo cold start.
+          AWS_LWA_ASYNC_INIT: "true"
+          # "local" fica de fora aqui de proposito: e o perfil que liga o
+          # SemeadorSintetico. Numa instancia de verdade, dado sintetico
+          # misturado com medicao real seria pior que dado nenhum.
+          SPRING_PROFILES_ACTIVE: dynamo
+          SENTINELA_DYNAMO_TABELA_VERIFICACOES:
+            Fn::ImportValue: !Sub "sentinela-${Ambiente}-tabela-verificacoes"
+          SENTINELA_DYNAMO_TABELA_EVENTOS:
+            Fn::ImportValue: !Sub "sentinela-${Ambiente}-tabela-eventos"
+          SENTINELA_ORIGENS_PERMITIDAS: !Join [",", !Ref OrigensPermitidas]
+          # SENTINELA_DYNAMO_CRIAR_TABELAS fica de fora: as tabelas ja existem,
+          # criadas pela pilha de tabelas. A API nao tem permissao de
+          # CreateTable no papel acima -- de proposito.
+      Tags:
+        - Key: projeto
+          Value: sentinela
+
+  # -------------------------------------------------------------------------
+  # O endereco publico. Function URL, e nao API Gateway.
+  #
+  # API Gateway nao tem Always Free -- so teve um nivel gratuito de 12 meses,
+  # ja descontinuado para contas novas. Function URL nao e um servico
+  # separado: e so um jeito de invocar a Lambda por HTTPS direto, cobrado como
+  # a propria invocacao da Lambda -- ou seja, dentro do Always Free de novo.
+  # -------------------------------------------------------------------------
+  UrlDaApi:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt FuncaoDaApi.Arn
+      # NONE: sem assinatura AWS na requisicao. E o que faz o navegador do
+      # visitante conseguir chamar a API direto, sem credencial nenhuma --
+      # correto para uma API de leitura publica.
+      AuthType: NONE
+      # Sem bloco Cors aqui, de proposito: a aplicacao Spring ja resolve CORS
+      # sozinha (ConfiguracaoCors.java, testado em ConfiguracaoCorsTest). Se a
+      # Function URL tambem adicionasse cabecalho de CORS, o navegador veria
+      # dois valores de Access-Control-Allow-Origin na mesma resposta e
+      # recusaria por inconsistencia.
+
+  PermissaoDeInvocacaoPublica:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FuncaoDaApi.Arn
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+Outputs:
+  UrlPublica:
+    Description: Endereco publico da API. Isto e o que entra em painel.js.
+    Value: !GetAtt UrlDaApi.FunctionUrl
+
+  ComoVerOsLogs:
+    Value: !Sub "aws logs tail /aws/lambda/sentinela-${Ambiente}-api --follow"
