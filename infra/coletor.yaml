@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Sentinela - o coletor como funcao Lambda, disparada pelo EventBridge a cada 5
+  minutos. Depende da pilha de tabelas, que precisa existir antes.
+
+Parameters:
+  Ambiente:
+    Type: String
+    Default: publico
+    AllowedValues: [publico, privado]
+
+  BucketDoCodigo:
+    Type: String
+    Description: >
+      Bucket S3 onde o jar do coletor foi enviado. Precisa estar na MESMA regiao
+      da funcao -- a Lambda nao le codigo de bucket em outra regiao.
+
+  ChaveDoCodigo:
+    Type: String
+    Description: Caminho do jar dentro do bucket, por exemplo coletor/sentinela-coletor.jar
+
+  Alvos:
+    Type: String
+    NoEcho: true
+    Description: >
+      Lista de alvos no formato id=url;id=url.
+
+      NoEcho esconde o valor no console e nos eventos da pilha. Numa instancia
+      privada esta lista carrega URL interna, e por isso ela NAO tem valor
+      padrao e NAO fica em arquivo versionado: entra na hora do deploy.
+
+  TempoLimiteDeVerificacaoMs:
+    Type: Number
+    Default: 5000
+    Description: Quanto esperar por cada alvo antes de considerar tempo esgotado.
+
+  MemoriaMB:
+    Type: Number
+    Default: 512
+    AllowedValues: [256, 512, 1024]
+    Description: >
+      Na Lambda, memoria e CPU andam juntas: 512 MB da aproximadamente o dobro
+      de processador de 256 MB. Como a cobranca e por gigabyte-segundo, dobrar a
+      memoria de uma funcao que termina na metade do tempo custa o MESMO -- e a
+      partida da JVM fica bem mais rapida. Por isso 512, e nao o minimo.
+
+  DiasDeRetencaoDeLog:
+    Type: Number
+    Default: 7
+    AllowedValues: [1, 3, 5, 7, 14, 30]
+    Description: >
+      Sem isto, a Lambda cria o grupo de log com retencao INFINITA e o
+      armazenamento cresce para sempre. E um dos custos que aparecem meses
+      depois, sem ninguem entender de onde vem.
+
+Resources:
+  # -------------------------------------------------------------------------
+  # Permissoes da funcao. Este e o bloco que merece a leitura mais atenta.
+  # -------------------------------------------------------------------------
+  PapelDoColetor:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "sentinela-${Ambiente}-coletor"
+      Description: >
+        Credenciais que a Lambda recebe. Sao temporarias e giram sozinhas: nao
+        ha chave de acesso em lugar nenhum do codigo nem da configuracao.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: escrever-verificacoes
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Permissao minima, e de proposito:
+              #  - so escrita, nunca leitura. O coletor nao le nada; quem le e a API.
+              #  - so nesta tabela, e nao em "*". Se a funcao for comprometida,
+              #    o alcance dela para aqui.
+              #  - sem DeleteItem: nada no fluxo do coletor apaga registro. Quem
+              #    apaga e o TTL, que e do proprio DynamoDB.
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  Fn::ImportValue: !Sub "sentinela-${Ambiente}-arn-verificacoes"
+        - PolicyName: escrever-log
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt GrupoDeLog.Arn
+      Tags:
+        - Key: projeto
+          Value: sentinela
+
+  # O grupo de log e declarado aqui, e nao deixado para a Lambda criar sozinha,
+  # justamente para poder fixar a retencao. O nome segue o padrao que a Lambda
+  # espera; se divergir, ela cria outro por conta e este fica vazio.
+  GrupoDeLog:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/sentinela-${Ambiente}-coletor"
+      RetentionInDays: !Ref DiasDeRetencaoDeLog
+
+  FuncaoDoColetor:
+    Type: AWS::Lambda::Function
+    DependsOn: GrupoDeLog
+    Properties:
+      FunctionName: !Sub "sentinela-${Ambiente}-coletor"
+      Description: Verifica a disponibilidade dos sistemas monitorados a cada 5 minutos.
+      Runtime: java21
+      Architectures:
+        # Graviton (ARM) custa cerca de 20% menos que x86 pelo mesmo trabalho, e
+        # o jar e Java puro: roda igual nas duas. Nao ha motivo para escolher a
+        # mais cara.
+        - arm64
+      Handler: com.sentinela.coletor.lambda.ManipuladorLambda::handleRequest
+      Role: !GetAtt PapelDoColetor.Arn
+      MemorySize: !Ref MemoriaMB
+      # 30s com folga: tres alvos verificados EM PARALELO, cada um com limite de
+      # 5s, terminam em torno de 6s no pior caso. O limite existe para a funcao
+      # nao ficar presa e cobrar tempo a toa se algo travar.
+      Timeout: 30
+      Code:
+        S3Bucket: !Ref BucketDoCodigo
+        S3Key: !Ref ChaveDoCodigo
+      Environment:
+        Variables:
+          SENTINELA_ALVOS: !Ref Alvos
+          SENTINELA_TIMEOUT_MS: !Ref TempoLimiteDeVerificacaoMs
+          SENTINELA_DYNAMO_TABELA:
+            Fn::ImportValue: !Sub "sentinela-${Ambiente}-tabela-verificacoes"
+          # AWS_REGION ja vem preenchida pela propria Lambda; nao declarar aqui.
+          #
+          # Nao ha SENTINELA_DYNAMO_ENDPOINT: sem ele o SDK usa o DynamoDB real
+          # da regiao. A variavel existe apenas para apontar ao banco local.
+      Tags:
+        - Key: projeto
+          Value: sentinela
+
+  # -------------------------------------------------------------------------
+  # O disparo a cada 5 minutos.
+  #
+  # Regra agendada do EventBridge nao tem custo -- o que se paga e a execucao da
+  # funcao, e ela cabe folgada no nivel gratuito.
+  # -------------------------------------------------------------------------
+  AgendamentoDaVerificacao:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "sentinela-${Ambiente}-a-cada-5-min"
+      Description: Dispara o coletor a cada 5 minutos.
+      ScheduleExpression: "rate(5 minutes)"
+      State: ENABLED
+      Targets:
+        - Id: coletor
+          Arn: !GetAtt FuncaoDoColetor.Arn
+
+  # Sem esta permissao a regra dispara e a invocacao e recusada, em silencio do
+  # ponto de vista de quem olha a funcao: ela simplesmente nunca roda.
+  PermissaoParaOEventBridge:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FuncaoDoColetor.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AgendamentoDaVerificacao.Arn
+
+Outputs:
+  NomeDaFuncao:
+    Value: !Ref FuncaoDoColetor
+
+  ComoVerOsLogs:
+    Description: Comando para acompanhar a funcao em tempo real.
+    Value: !Sub "aws logs tail /aws/lambda/sentinela-${Ambiente}-coletor --follow"
+
+  ComoInvocarNaMao:
+    Description: Dispara uma rodada sem esperar os 5 minutos.
+    Value: !Sub "aws lambda invoke --function-name sentinela-${Ambiente}-coletor /dev/stdout"

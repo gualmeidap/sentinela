@@ -102,6 +102,20 @@
       <version>${slf4j.version}</version>
     </dependency>
 
+    <!--
+      Interface que a Lambda usa para invocar o codigo. Sao poucos kilobytes:
+      só as anotacoes e o contrato do handler, sem runtime nenhum junto.
+
+      Nao entra o aws-lambda-java-events, que traz as classes de dezenas de
+      tipos de evento. O EventBridge agendado nao manda nada que o coletor
+      precise ler - ele so diz "esta na hora".
+    -->
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-lambda-java-core</artifactId>
+      <version>1.4.0</version>
+    </dependency>
+
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>

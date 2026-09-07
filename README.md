@@ -91,7 +91,13 @@ sentinela/
 │   ├── pom.xml
 │   ├── alvos.exemplo.properties
 │   └── src/main/java/com/sentinela/coletor/
+│       └── lambda/           ponto de entrada quando roda como Lambda
 ├── docker-compose.yml        DynamoDB Local para desenvolver
+├── infra/                    CloudFormation: o que sobe para a AWS
+│   ├── README.md             custo estimado e como remover tudo
+│   ├── tabelas.yaml
+│   ├── coletor.yaml
+│   └── implantar.sh
 └── web/                      painel estático, sem build
     ├── index.html
     ├── estilo.css
@@ -423,6 +429,20 @@ CloudWatch Logs, então imprimir continua útil.
 
 Use no `alvos.properties` os mesmos ids do catálogo da API, senão o painel não
 tem onde mostrar o que foi medido.
+
+### Na AWS
+
+A pasta [`infra/`](infra/) descreve, em CloudFormation, o que seria criado: as
+duas tabelas, a função Lambda, o papel IAM, o agendamento de 5 em 5 minutos e o
+grupo de log com retenção fixada.
+
+**Custo esperado: US$ 0/mês** — o uso fica uma ou duas ordens de grandeza abaixo
+de cada limite do nível gratuito. As contas estão em [`infra/README.md`](infra/README.md),
+junto do procedimento para remover tudo.
+
+O script `infra/implantar.sh` mostra cada comando e pede confirmação antes de
+executar. A lista de alvos não fica em nenhum arquivo versionado: é digitada na
+hora do deploy, porque numa instância privada ela carrega URL interna.
 
 ### O painel
 

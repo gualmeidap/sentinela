@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Sentinela - as duas tabelas do DynamoDB. Sao compartilhadas pelo coletor (que
+  escreve) e pela API (que le); as pecas nao se falam por nenhum outro caminho.
+
+# Esta pilha e separada da do coletor de proposito: os dados sobrevivem a
+# recriacao da funcao. Derrubar e subir o coletor de novo nao deve apagar o
+# historico.
+
+Parameters:
+  Ambiente:
+    Type: String
+    Default: publico
+    AllowedValues: [publico, privado]
+    Description: >
+      Entra no nome das tabelas para as duas instancias nunca se misturarem na
+      mesma conta.
+
+  CapacidadeDeLeitura:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 10
+    Description: >
+      Unidades de leitura por tabela. O Always Free cobre 25 no total da conta,
+      somando TODAS as tabelas: com duas tabelas a 5, ficam 10 de 25.
+
+  CapacidadeDeEscrita:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 10
+    Description: Mesmo raciocinio da leitura.
+
+Resources:
+  # -------------------------------------------------------------------------
+  # Verificacoes de disponibilidade: o que o coletor mede a cada 5 minutos.
+  #
+  # Chave de ordenacao e o momento puro. Isso torna a escrita idempotente: se a
+  # Lambda for invocada duas vezes para o mesmo disparo -- o que a AWS permite
+  # acontecer --, a segunda escrita substitui a primeira em vez de duplicar.
+  # -------------------------------------------------------------------------
+  TabelaDeVerificacoes:
+    Type: AWS::DynamoDB::Table
+    # Delete: remover a pilha remove a tabela. Numa instancia com dado que
+    # importe, troque para Retain. Aqui a escolha e deliberada: o maior risco
+    # deste projeto e esquecer recurso ligado gerando custo, e "apaga tudo"
+    # e mais seguro que "deixa orfao".
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TableName: !Sub "sentinela-${Ambiente}-verificacoes"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: !Ref CapacidadeDeLeitura
+        WriteCapacityUnits: !Ref CapacidadeDeEscrita
+      # So os atributos que fazem parte da chave sao declarados. O resto do item
+      # e livre -- e o que significa o DynamoDB nao ter esquema fixo, e e o que
+      # permite o coletor gravar o motivo da falha sem a API precisar conhecer
+      # o campo.
+      AttributeDefinitions:
+        - AttributeName: sistemaId
+          AttributeType: S
+        - AttributeName: momento
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sistemaId
+          KeyType: HASH
+        - AttributeName: momento
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiraEm
+        Enabled: true
+      Tags:
+        - Key: projeto
+          Value: sentinela
+
+  # -------------------------------------------------------------------------
+  # Eventos de negocio: o que os sistemas publicam em POST /eventos.
+  #
+  # Aqui a chave de ordenacao carrega um identificador junto do momento. Dois
+  # eventos podem acontecer no mesmo milissegundo, e com a chave sendo so o
+  # momento o segundo apagaria o primeiro sem nenhum erro aparecer -- a contagem
+  # do dia ficaria menor que a realidade.
+  # -------------------------------------------------------------------------
+  TabelaDeEventos:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TableName: !Sub "sentinela-${Ambiente}-eventos"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: !Ref CapacidadeDeLeitura
+        WriteCapacityUnits: !Ref CapacidadeDeEscrita
+      AttributeDefinitions:
+        - AttributeName: sistema
+          AttributeType: S
+        - AttributeName: ordenacao
+          AttributeType: S
+      KeySchema:
+        - AttributeName: sistema
+          KeyType: HASH
+        - AttributeName: ordenacao
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiraEm
+        Enabled: true
+      Tags:
+        - Key: projeto
+          Value: sentinela
+
+Outputs:
+  NomeDaTabelaDeVerificacoes:
+    Description: Passe este valor para a pilha do coletor.
+    Value: !Ref TabelaDeVerificacoes
+    Export:
+      Name: !Sub "sentinela-${Ambiente}-tabela-verificacoes"
+
+  ArnDaTabelaDeVerificacoes:
+    Value: !GetAtt TabelaDeVerificacoes.Arn
+    Export:
+      Name: !Sub "sentinela-${Ambiente}-arn-verificacoes"
+
+  NomeDaTabelaDeEventos:
+    Value: !Ref TabelaDeEventos
+    Export:
+      Name: !Sub "sentinela-${Ambiente}-tabela-eventos"
+
+  ArnDaTabelaDeEventos:
+    Value: !GetAtt TabelaDeEventos.Arn
+    Export:
+      Name: !Sub "sentinela-${Ambiente}-arn-eventos"
