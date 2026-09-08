@@ -326,6 +326,7 @@ aplicação.
 
 | Método | Rota | O que faz | Estado |
 |---|---|---|---|
+| `GET` | `/` | Ponto de partida: nome do serviço e os endpoints disponíveis | no ar |
 | `GET` | `/ping` | Verificação de vida da própria API | no ar |
 | `GET` | `/sistemas` | Lista os sistemas monitorados com o estado de cada um agora | no ar |
 | `GET` | `/sistemas/{id}/disponibilidade` | Fita das últimas 24 h em blocos de 15 min, com o percentual | no ar |
