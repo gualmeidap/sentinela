@@ -2,11 +2,11 @@
 
 O que sobe para a AWS, quanto custa e como remover.
 
-**Estado em 07/09/2026, ambiente `publico`:** as tabelas e o coletor já estão
-rodando de verdade na conta AWS — confirmado com invocação manual e leitura do
-DynamoDB. A pilha da API (`infra/api.yaml`) está pronta e testada localmente,
-mas **ainda não foi implantada** — revise antes de rodar o passo 5 do
-[roteiro](#roteiro).
+**Estado em 08/09/2026, ambiente `publico`:** as três pilhas rodam de verdade
+na conta AWS — tabelas, coletor e API, confirmado com invocação manual e
+leitura do DynamoDB pelas duas funções. A API pública responde em
+`https://44nv32cezgzqgenpffiwenvwua0yfaed.lambda-url.us-east-1.on.aws/`.
+Falta só a página (S3/CloudFront) para existir um link único e navegável.
 
 ## Antes de qualquer coisa: o alerta de gastos
 
@@ -119,15 +119,16 @@ fora das variáveis de ambiente da API, e o papel IAM não inclui `CreateTable`.
 As tabelas já existem, criadas pela pilha de tabelas — a API só lê e grava
 item, nunca administra schema.
 
-**Partida a frio medida, não estimada.** Localmente, com o mesmo perfil que
-roda em produção (`dynamo`, sem o `local` que liga dado sintético), o Spring
-Boot leva **~7,4 segundos** até `/ping` responder. A Lambda dá até 10s de
-inicialização com CPU extra antes de cobrar tempo normal; `AWS_LWA_ASYNC_INIT`
-garante que, se isso variar e passar de ~9,8s alguma vez, a Lambda não reinicia
-do zero — ela só empurra o resto da espera para a primeira invocação, dentro do
-`Timeout` de 30s. Na prática: a primeira visita ao painel depois de um período
-ocioso pode demorar alguns segundos a mais para carregar; visitas seguintes,
-com a função "quente", são rápidas.
+**Partida a frio medida na AWS de verdade, não estimada.** Primeiro deploy:
+`Started SentinelaApiApplication in 8.229 seconds`. Isso passou dos ~9,8s de
+inicialização com CPU extra que a Lambda oferece antes de cobrar tempo normal
+(`Init Duration: 9838.68 ms` no log), e `AWS_LWA_ASYNC_INIT` funcionou
+exatamente como documentado: em vez de reiniciar a função do zero, empurrou o
+resto da espera para a primeira invocação (`Billed Duration: 10616 ms` nela),
+dentro do `Timeout` de 30s configurado. As invocações seguintes, com a função
+já quente, vieram em milissegundos: 15 ms, 126 ms, 4 ms. Na prática: a
+primeira visita ao painel depois de um período ocioso demora alguns segundos
+a mais; visitas seguintes são rápidas.
 
 ### Comuns às duas
 

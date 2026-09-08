@@ -62,7 +62,7 @@ flowchart LR
 | Peça | O que faz | Tecnologia | Estado |
 |---|---|---|---|
 | `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | **no ar na AWS** |
-| `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em Lambda (Function URL) | no ar (local); deploy pronto, aguardando confirmação |
+| `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em Lambda (Function URL) | **no ar na AWS** |
 | `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | no ar (local) |
 | — | Persistência | DynamoDB | **no ar na AWS** |
 
@@ -153,11 +153,15 @@ Lambda; o único arquivo novo é um `run.sh` de duas linhas que dá `java -jar`
 no jar que já existia.
 
 O preço dessa escolha, para ser honesto: diferente de uma EC2 sempre ligada,
-a Lambda "esfria" depois de um tempo ociosa. Medido localmente com o mesmo
-perfil de produção, o Spring Boot leva **~7,4 segundos** até responder — a
-primeira visita ao painel depois de um período parado sente isso; visitas
-seguintes, com a função já quente, são rápidas. Trocar dinheiro incerto por
-alguns segundos ocasionais de espera foi a troca certa aqui.
+a Lambda "esfria" depois de um tempo ociosa. Medido de verdade na AWS, o
+Spring Boot leva **8,2 segundos** para subir; como isso passa dos ~9,8s de
+inicialização com CPU extra que a Lambda oferece, `AWS_LWA_ASYNC_INIT` entrou
+em ação como previsto — sem reiniciar a função, só empurrando o resto da
+espera para a primeira invocação (**10,6s cobrados nela**). Chamadas
+seguintes, com a função já quente, respondem em poucos milissegundos —
+confirmado com uma sequência real: 15 ms, depois 126 ms, depois 4 ms. Trocar
+dinheiro incerto por alguns segundos ocasionais de espera foi a troca certa
+aqui.
 
 ### Por que evento com código fechado, e não log corrido
 
@@ -466,10 +470,13 @@ tabelas, as duas funções Lambda (coletor e API), os papéis IAM, o agendamento
 de 5 em 5 minutos, o endereço público da API (Function URL) e os grupos de log
 com retenção fixada.
 
-**Estado real, ambiente `publico`:** tabelas e coletor já rodam na conta AWS.
-A pilha da API está pronta e testada localmente, aguardando confirmação antes
-do deploy — ver [`infra/README.md`](infra/README.md) para o porquê de cada
-decisão, o custo estimado e o procedimento para remover tudo.
+**Estado real, ambiente `publico`:** tabelas, coletor e API já rodam na conta
+AWS. A API responde em `https://44nv32cezgzqgenpffiwenvwua0yfaed.lambda-url.us-east-1.on.aws/`
+— por exemplo, `.../sistemas` devolve o estado atual dos três alvos, lido do
+DynamoDB de verdade. Falta só a página (S3/CloudFront) para existir um link
+único, com painel, para abrir no navegador. Ver [`infra/README.md`](infra/README.md)
+para o porquê de cada decisão, o custo estimado e o procedimento para remover
+tudo.
 
 **Custo esperado: US$ 0/mês, para sempre** — nada aqui depende da idade da
 conta. O uso fica uma ou duas ordens de grandeza abaixo de cada limite do
@@ -520,8 +527,8 @@ Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar lo
       EventBridge — verifica em paralelo, classifica cada modo de falha, grava
       no DynamoDB e **roda de verdade na AWS**, a cada 5 minutos, sozinho
 - [ ] **6.** Deploy: API em Lambda (Function URL), página no S3 com CloudFront
-      — *API pronta e testada localmente (deploy revisado, não confirmado
-      ainda); página local, S3/CloudFront pendente*
+      — *API **no ar na AWS**, lendo e gravando no DynamoDB de verdade; falta
+      só a página (S3/CloudFront) para existir um link único e navegável*
 - [ ] **7.** Publicação de eventos reais pelo sistema de origem
 
 Como parte do escopo e não como extra, já de pé: **112 testes** (79 na API, 33

@@ -198,6 +198,11 @@ Resources:
       # dois valores de Access-Control-Allow-Origin na mesma resposta e
       # recusaria por inconsistencia.
 
+  # Duas permissoes, nao uma. A AWS mudou essa exigencia em outubro de 2025:
+  # antes so lambda:InvokeFunctionUrl bastava para uma Function URL publica.
+  # Hoje falta a segunda -- sem ela a resposta e 403 mesmo com AuthType NONE e
+  # a primeira permissao corretas. Ate a documentacao oficial de referencia do
+  # CloudFormation ainda mostra so a primeira no exemplo.
   PermissaoDeInvocacaoPublica:
     Type: AWS::Lambda::Permission
     Properties:
@@ -205,6 +210,14 @@ Resources:
       Action: lambda:InvokeFunctionUrl
       Principal: "*"
       FunctionUrlAuthType: NONE
+
+  PermissaoDeExecucaoPublica:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FuncaoDaApi.Arn
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
 
 Outputs:
   UrlPublica:
