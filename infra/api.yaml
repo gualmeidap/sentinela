@@ -55,6 +55,28 @@ Parameters:
     Default: 7
     AllowedValues: [1, 3, 5, 7, 14, 30]
 
+  PerfilAdicional:
+    Type: String
+    Default: ""
+    Description: >
+      Perfil extra do Spring, alem de "dynamo" -- em branco na instancia
+      publica. Existe para a instancia privada poder carregar um
+      application-{perfil}.yml proprio (nunca versionado) com os sistemas
+      reais, sem esse arquivo nem esse nome aparecerem aqui.
+
+  ChaveDeAplicacaoExtra:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >
+      Valor de uma credencial de aplicacao que so a instancia privada usa. Em
+      branco na instancia publica. NoEcho: nao aparece no console nem nos
+      eventos da pilha. Este template nunca sabe o que essa chave abre --
+      isso mora so no application-{perfil}.yml local, gitignorado.
+
+Conditions:
+  TemPerfilAdicional: !Not [!Equals [!Ref PerfilAdicional, ""]]
+
 Resources:
   # -------------------------------------------------------------------------
   # Permissoes: leitura nas verificacoes, leitura E escrita nos eventos.
@@ -163,12 +185,19 @@ Resources:
           # "local" fica de fora aqui de proposito: e o perfil que liga o
           # SemeadorSintetico. Numa instancia de verdade, dado sintetico
           # misturado com medicao real seria pior que dado nenhum.
-          SPRING_PROFILES_ACTIVE: dynamo
+          #
+          # PerfilAdicional entra so na instancia privada, para carregar um
+          # application-{perfil}.yml proprio -- ver o parametro acima.
+          SPRING_PROFILES_ACTIVE: !If
+            - TemPerfilAdicional
+            - !Sub "dynamo,${PerfilAdicional}"
+            - dynamo
           SENTINELA_DYNAMO_TABELA_VERIFICACOES:
             Fn::ImportValue: !Sub "sentinela-${Ambiente}-tabela-verificacoes"
           SENTINELA_DYNAMO_TABELA_EVENTOS:
             Fn::ImportValue: !Sub "sentinela-${Ambiente}-tabela-eventos"
           SENTINELA_ORIGENS_PERMITIDAS: !Join [",", !Ref OrigensPermitidas]
+          SENTINELA_CHAVE_APLICACAO_PRIVADA: !Ref ChaveDeAplicacaoExtra
           # SENTINELA_DYNAMO_CRIAR_TABELAS fica de fora: as tabelas ja existem,
           # criadas pela pilha de tabelas. A API nao tem permissao de
           # CreateTable no papel acima -- de proposito.
