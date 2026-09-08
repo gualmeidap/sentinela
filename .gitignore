@@ -4,6 +4,12 @@ infra/build/
 *.jar
 *.war
 
+# pagina/src/main/resources e uma copia gerada de web/ por
+# infra/preparar_pagina.py -- nunca editada a mao, nunca versionada.
+pagina/src/main/resources/*.html
+pagina/src/main/resources/*.css
+pagina/src/main/resources/*.js
+
 # --- Restricao do projeto ---------------------------------------------------
 # A instancia privada nunca entra no repositorio: nem URL, nem nome de sistema,
 # nem IP. Qualquer arquivo de configuracao local fica de fora por padrao.

@@ -12,6 +12,10 @@ Portal que mostra, numa tela só, o estado dos sistemas que mantenho em produç�
 Projeto pessoal com dois propósitos: ter o painel de fato, e servir de portfólio
 para vagas de back-end Java.
 
+**[Ver o painel no ar](https://ajswegtqzqq75cxnsidkrk4jxy0qqzjt.lambda-url.us-east-1.on.aws/)**
+— instância de demonstração, monitorando serviços públicos reais (GitHub,
+Wikipedia). Roda inteira na AWS, dentro do Always Free.
+
 ## O problema
 
 Monitoramento comum responde uma pergunta: *o sistema está de pé?* O Sentinela
@@ -50,7 +54,7 @@ flowchart LR
     C["coletor<br/>Java puro · Lambda + EventBridge"]
     A["api<br/>Spring Boot · Lambda"]
     DB[("DynamoDB<br/>TTL de 30 dias")]
-    W["web<br/>HTML/JS · S3 + CloudFront"]
+    W["web<br/>HTML/JS · Lambda"]
 
     C -->|"verifica a cada 5 min"| S
     C -->|"grava disponibilidade"| DB
@@ -63,7 +67,7 @@ flowchart LR
 |---|---|---|---|
 | `coletor/` | A cada 5 min chama cada sistema e grava se respondeu e em quanto tempo | Java puro, Lambda + EventBridge | **no ar na AWS** |
 | `api/` | Recebe eventos publicados pelos sistemas, lê histórico e expõe REST | Spring Boot em Lambda (Function URL) | **no ar na AWS** |
-| `web/` | Página com o painel | HTML/JS estático, S3 + CloudFront | no ar (local) |
+| `web/` | Página com o painel | HTML/JS estático, Lambda (Function URL) | **no ar na AWS** |
 | — | Persistência | DynamoDB | **no ar na AWS** |
 
 **As peças não se chamam entre si.** O banco é o único ponto de encontro: o
@@ -92,15 +96,22 @@ sentinela/
 │   ├── alvos.exemplo.properties
 │   └── src/main/java/com/sentinela/coletor/
 │       └── lambda/           ponto de entrada quando roda como Lambda
+├── pagina/                   Lambda que serve web/, sem Spring nem adaptador
+│   ├── mvnw, mvnw.cmd
+│   ├── pom.xml
+│   └── src/main/java/com/sentinela/pagina/
+│       └── ManipuladorDaPagina.java
 ├── docker-compose.yml        DynamoDB Local para desenvolver
 ├── infra/                    CloudFormation: o que sobe para a AWS
 │   ├── README.md             custo estimado, decisões e como remover tudo
 │   ├── tabelas.yaml
 │   ├── coletor.yaml
 │   ├── api.yaml               Lambda da API atrás de uma Function URL
+│   ├── pagina.yaml             Lambda da página atrás de outra Function URL
 │   ├── empacotar_api.py       gera o run.sh e zipa com o jar, sem mudar o build
+│   ├── preparar_pagina.py     copia web/ para pagina/, trocando o endereco da API
 │   └── implantar.sh
-└── web/                      painel estático, sem build
+└── web/                      painel estático, sem build — fonte de verdade da pagina
     ├── index.html
     ├── estilo.css
     └── painel.js
@@ -162,6 +173,32 @@ seguintes, com a função já quente, respondem em poucos milissegundos —
 confirmado com uma sequência real: 15 ms, depois 126 ms, depois 4 ms. Trocar
 dinheiro incerto por alguns segundos ocasionais de espera foi a troca certa
 aqui.
+
+### Por que a página também virou Lambda, e não S3 + CloudFront
+
+Mesma investigação da EC2, resultado parecido. **S3 não tem Always Free** — só
+os 12 meses da conta, iguais aos da EC2 já descartada. O custo real seria
+minúsculo (a página inteira tem menos de 30 KB), mas não seria *garantido*
+zero, e essa garantia era exatamente o combinado.
+
+CloudFront, ao contrário, **é Always Free de verdade** (1 TB de saída e 10
+milhões de requisições por mês, para sempre) — mas normalmente precisa de uma
+origem, e essa origem costuma ser o próprio S3 que acabou de ser descartado.
+
+A saída: a mesma arquitetura da API e do coletor. Esta Lambda, porém, não usa
+o AWS Lambda Web Adapter — não há Spring Boot nenhum para adaptar. É um
+handler Lambda nativo (`ManipuladorDaPagina::handleRequest`), sem processo
+externo, sem servidor HTTP embutido: os três arquivos ficam empacotados como
+recursos dentro do próprio jar, e o handler só decide qual devolver a partir
+do caminho da requisição. O cold start é uma fração do da API, porque não há
+JVM de framework nenhuma para subir — só uma classe e um `Map`.
+
+`web/` continua sendo a única fonte de verdade da página, sem build e sem
+framework. `infra/preparar_pagina.py` copia os três arquivos para dentro do
+módulo `pagina/` antes do empacotamento — e é o único lugar onde o endereço da
+API, escrito em `painel.js`, é trocado do `localhost` de desenvolvimento para
+o endereço público de verdade. A cópia nunca é editada à mão; rodar o script
+de novo sempre a sobrescreve.
 
 ### Por que evento com código fechado, e não log corrido
 
@@ -283,9 +320,10 @@ faria a tela mentir.
 ### Por que a página não tem framework
 
 O painel é HTML, CSS e JavaScript puros. Não é purismo: o destino dele é ser
-arquivo estático servido pelo CloudFront, e um framework acrescentaria um passo
-de build entre escrever e publicar — mais uma coisa para quebrar, versionar e
-manter, em troca de conveniência que uma tela com três cartões não precisa.
+servido como está, sem transformação — hoje por uma Lambda, e um framework
+acrescentaria um passo de build entre escrever e publicar, mais uma coisa para
+quebrar, versionar e manter, em troca de conveniência que uma tela com três
+cartões não precisa.
 
 A regra de negócio também não está lá. Fita, percentual e estado de bloco são
 calculados na API; a página só desenha o que recebe. Se o cálculo vivesse no
@@ -467,17 +505,15 @@ tem onde mostrar o que foi medido.
 ### Na AWS
 
 A pasta [`infra/`](infra/) descreve, em CloudFormation, o que sobe: as duas
-tabelas, as duas funções Lambda (coletor e API), os papéis IAM, o agendamento
-de 5 em 5 minutos, o endereço público da API (Function URL) e os grupos de log
-com retenção fixada.
+tabelas, as três funções Lambda (coletor, API e página), os papéis IAM, o
+agendamento de 5 em 5 minutos e os dois endereços públicos (Function URL).
 
-**Estado real, ambiente `publico`:** tabelas, coletor e API já rodam na conta
-AWS. A API responde em `https://44nv32cezgzqgenpffiwenvwua0yfaed.lambda-url.us-east-1.on.aws/`
-— por exemplo, `.../sistemas` devolve o estado atual dos três alvos, lido do
-DynamoDB de verdade. Falta só a página (S3/CloudFront) para existir um link
-único, com painel, para abrir no navegador. Ver [`infra/README.md`](infra/README.md)
-para o porquê de cada decisão, o custo estimado e o procedimento para remover
-tudo.
+**Estado real, ambiente `publico`: tudo no ar.** Tabelas, coletor, API e
+página rodam de verdade na conta AWS —
+**[o painel](https://ajswegtqzqq75cxnsidkrk4jxy0qqzjt.lambda-url.us-east-1.on.aws/)**
+é o link único, servido pela própria Lambda, chamando a API pública, lendo do
+DynamoDB real. Ver [`infra/README.md`](infra/README.md) para o porquê de cada
+decisão, o custo estimado e o procedimento para remover tudo.
 
 **Custo esperado: US$ 0/mês, para sempre** — nada aqui depende da idade da
 conta. O uso fica uma ou duas ordens de grandeza abaixo de cada limite do
@@ -515,6 +551,20 @@ Para rodar os testes:
 cd api && ./mvnw test
 ```
 
+### A página como Lambda, local
+
+`pagina/` não é necessário para desenvolver a página no dia a dia — o
+`python -m http.server` acima já basta. Ele existe para reproduzir localmente
+exatamente o que roda na AWS, ou para rodar os testes do handler:
+
+```bash
+python infra/preparar_pagina.py
+cd pagina && ./mvnw test
+```
+
+Sem argumento, o script copia `web/` como está, sem trocar o endereço da API
+— é o que o CI também faz.
+
 ## Estado atual
 
 Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar local.
@@ -527,18 +577,18 @@ Cada etapa funcionando antes da próxima. Nada sobe para a AWS antes de rodar lo
 - [x] **5.** Coletor em Java puro, local primeiro, depois em Lambda com
       EventBridge — verifica em paralelo, classifica cada modo de falha, grava
       no DynamoDB e **roda de verdade na AWS**, a cada 5 minutos, sozinho
-- [ ] **6.** Deploy: API em Lambda (Function URL), página no S3 com CloudFront
-      — *API **no ar na AWS**, lendo e gravando no DynamoDB de verdade; falta
-      só a página (S3/CloudFront) para existir um link único e navegável*
+- [x] **6.** Deploy: API e página, ambas em Lambda com Function URL —
+      **tudo no ar na AWS**: coletor mede, grava no DynamoDB; API lê e grava;
+      página serve o painel e chama a API pelo navegador. Um único link.
 - [ ] **7.** Publicação de eventos reais pelo sistema de origem
 
-Como parte do escopo e não como extra, já de pé: **112 testes** (79 na API, 33
-no coletor) cobrindo cálculo de disponibilidade, agregação de evento por
-motivo, limite de escrita por aplicação, rejeição de payload malformado, os
-quatro modos de falha do coletor, a regra de CORS e a leitura/escrita real
-contra DynamoDB Local; e **CI no GitHub Actions** rodando tudo a cada push, em
-dois jobs paralelos com o próprio DynamoDB Local subindo no runner Linux — que
-é o que pega o que só quebra fora do Windows.
+Como parte do escopo e não como extra, já de pé: **118 testes** (79 na API, 33
+no coletor, 6 na página) cobrindo cálculo de disponibilidade, agregação de
+evento por motivo, limite de escrita por aplicação, rejeição de payload
+malformado, os quatro modos de falha do coletor, a regra de CORS e a
+leitura/escrita real contra DynamoDB Local; e **CI no GitHub Actions** rodando
+tudo a cada push, em três jobs paralelos com o próprio DynamoDB Local subindo
+no runner Linux — que é o que pega o que só quebra fora do Windows.
 
 Tratamento explícito de erro cobrindo cada modo previsto no escopo: alvo que
 não responde (`TEMPO_ESGOTADO`), alvo lento demais (mesmo código, tempo
@@ -551,8 +601,8 @@ código de resposta.
 
 Conta AWS no plano gratuito. Alerta no AWS Budgets configurado antes de subir
 qualquer recurso — inclusive um "zero-spend budget", que avisa no primeiro
-centavo. Sem NAT Gateway, que cobra por hora só de existir; sem EC2, que só é
-gratuita nos 12 meses da conta, não do uso. Preferência sempre pelo que
-estiver no Always Free — foi o critério que decidiu o DynamoDB, e depois a
-Lambda para as duas peças de código. Contas detalhadas em
-[`infra/README.md`](infra/README.md).
+centavo. Sem NAT Gateway, que cobra por hora só de existir; sem EC2 nem S3,
+que só são gratuitos nos 12 meses da conta, não do uso. Preferência sempre
+pelo que estiver no Always Free — foi o critério que decidiu o DynamoDB, e
+depois a Lambda para as três peças de código, página incluída. Contas
+detalhadas em [`infra/README.md`](infra/README.md).

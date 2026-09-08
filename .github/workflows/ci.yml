@@ -84,3 +84,32 @@ jobs:
       - name: Rodar os testes
         working-directory: coletor
         run: ./mvnw -B --no-transfer-progress verify
+
+  pagina:
+    name: Testes da pagina
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      - name: Instalar o JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # O modulo pagina/ nao versiona seus proprios recursos: eles sao uma
+      # copia gerada de web/, feita por este script (que tambem troca o
+      # endereco da API quando ha um real para colocar). Sem argumento, so
+      # copia como esta -- o suficiente para testar o handler.
+      - name: Preparar os recursos estaticos
+        run: python3 infra/preparar_pagina.py
+
+      - name: Rodar os testes
+        working-directory: pagina
+        run: ./mvnw -B --no-transfer-progress verify

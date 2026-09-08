@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Sentinela - o painel estatico (web/) servido por uma Lambda atras de uma
+  Function URL publica. Nao depende de nenhuma outra pilha: nao fala com o
+  DynamoDB, nao fala com a API, so devolve os arquivos que ja estao
+  empacotados dentro dela.
+
+# POR QUE LAMBDA E NAO S3 + CLOUDFRONT, COMO O BRIEFING PREVIA
+#
+# S3 nao tem Always Free -- so os 12 meses da conta, iguais aos da EC2 que ja
+# foi descartada pelo mesmo motivo. O custo real seria minusculo (a pagina tem
+# menos de 30 KB), mas nao seria GARANTIDO zero, e o combinado deste projeto e
+# nao arriscar isso.
+#
+# CloudFront tem Always Free de verdade (1 TB de saida e 10 milhoes de
+# requisicoes por mes, para sempre), mas precisaria de uma origem -- e
+# normalmente essa origem e o S3 que acabamos de descartar. A saida: a mesma
+# arquitetura que ja usamos para a API e o coletor. Esta funcao nao roda Spring
+# Boot -- e um handler Lambda nativo, sem adaptador nenhum no meio, porque
+# devolver tres arquivos estaticos nao precisa de mais que isso. O cold start e
+# uma fracao do da API: nao ha JVM de framework nenhum para subir.
+
+Parameters:
+  Ambiente:
+    Type: String
+    Default: publico
+    AllowedValues: [publico, privado]
+
+  BucketDoCodigo:
+    Type: String
+    Description: Mesmo bucket usado pela API e pelo coletor.
+
+  ChaveDoCodigo:
+    Type: String
+    Description: Caminho do jar dentro do bucket, por exemplo pagina/sentinela-pagina.jar
+
+  MemoriaMB:
+    Type: Number
+    Default: 256
+    AllowedValues: [128, 256, 512]
+    Description: >
+      O minimo costuma bastar aqui: nao ha JSON grande para deserializar, nao
+      ha calculo, so leitura de um recurso ja em memoria e devolucao de texto.
+
+  DiasDeRetencaoDeLog:
+    Type: Number
+    Default: 7
+    AllowedValues: [1, 3, 5, 7, 14, 30]
+
+Resources:
+  PapelDaPagina:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "sentinela-${Ambiente}-pagina"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # So log. Esta funcao nao le nem escreve em nenhum outro recurso da
+        # conta -- o menor alcance possivel de qualquer papel neste projeto.
+        - PolicyName: escrever-log
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt GrupoDeLog.Arn
+      Tags:
+        - Key: projeto
+          Value: sentinela
+
+  GrupoDeLog:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/sentinela-${Ambiente}-pagina"
+      RetentionInDays: !Ref DiasDeRetencaoDeLog
+
+  FuncaoDaPagina:
+    Type: AWS::Lambda::Function
+    DependsOn: GrupoDeLog
+    Properties:
+      FunctionName: !Sub "sentinela-${Ambiente}-pagina"
+      Description: Serve o painel estatico do Sentinela.
+      Runtime: java21
+      Architectures:
+        - arm64
+      # Handler nativo da Lambda -- o nome completo da classe, sem run.sh nem
+      # camada de adaptador. O jar (com o shade plugin) ja carrega tudo que a
+      # classe precisa, inclusive os tres arquivos da pagina.
+      Handler: com.sentinela.pagina.ManipuladorDaPagina::handleRequest
+      Role: !GetAtt PapelDaPagina.Arn
+      MemorySize: !Ref MemoriaMB
+      Timeout: 10
+      Code:
+        S3Bucket: !Ref BucketDoCodigo
+        S3Key: !Ref ChaveDoCodigo
+      Tags:
+        - Key: projeto
+          Value: sentinela
+
+  UrlDaPagina:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt FuncaoDaPagina.Arn
+      AuthType: NONE
+      # Sem bloco Cors: a pagina carrega seus proprios arquivos da mesma
+      # origem (nao ha requisicao cross-origin para carregar o HTML, o CSS ou
+      # o JS). Quem precisa de CORS e o fetch() dentro de painel.js para
+      # chamar a API, e isso e resolvido do lado da API (ConfiguracaoCors.java).
+
+  # Duas permissoes, nao uma -- mesma exigencia descoberta ao publicar a API:
+  # desde outubro de 2025 a AWS cobra tambem lambda:InvokeFunction, alem de
+  # lambda:InvokeFunctionUrl, para uma Function URL publica funcionar. Sem a
+  # segunda, toda chamada aqui devolveria 403 antes mesmo de chegar no handler.
+  PermissaoDeInvocacaoPublica:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FuncaoDaPagina.Arn
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  PermissaoDeExecucaoPublica:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FuncaoDaPagina.Arn
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  UrlPublica:
+    Description: O link do painel. E este que se compartilha.
+    Value: !GetAtt UrlDaPagina.FunctionUrl

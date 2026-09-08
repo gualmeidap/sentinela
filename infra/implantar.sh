@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 #
-# Sobe o coletor e a API para a AWS.
+# Sobe o coletor, a API e a pagina para a AWS.
 #
 # Este script NAO faz nada sozinho: ele mostra cada comando e pede confirmacao
 # antes de executar. Leia a saida antes de responder.
 #
 # Pre-requisitos:
 #   - AWS CLI configurado (aws configure)
-#   - Python 3 (usado so para empacotar o zip da API com o bit de execucao certo)
+#   - Python 3 (usado so para empacotar com o bit de execucao certo e para
+#     preparar os recursos da pagina)
 #   - alerta no AWS Budgets ja criado (ver README.md)
 #
 set -euo pipefail
@@ -17,6 +18,7 @@ REGIAO="${AWS_REGION:-us-east-1}"
 PILHA_TABELAS="sentinela-${AMBIENTE}-tabelas"
 PILHA_COLETOR="sentinela-${AMBIENTE}-coletor"
 PILHA_API="sentinela-${AMBIENTE}-api"
+PILHA_PAGINA="sentinela-${AMBIENTE}-pagina"
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JAR_COLETOR="${RAIZ}/coletor/target/sentinela-coletor-0.0.1-SNAPSHOT.jar"
 ZIP_API="${RAIZ}/infra/build/sentinela-api.zip"
@@ -36,6 +38,11 @@ titulo() {
   echo "=============================================================="
   echo " $1"
   echo "=============================================================="
+}
+
+url_da_pilha() {
+  aws cloudformation describe-stacks --stack-name "$1" --region "${REGIAO}" \
+    --query "Stacks[0].Outputs[?OutputKey=='UrlPublica'].OutputValue" --output text 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -62,6 +69,7 @@ CONTA="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET="sentinela-${AMBIENTE}-codigo-${CONTA}"
 CHAVE_COLETOR="coletor/sentinela-coletor.jar"
 CHAVE_API="api/sentinela-api.zip"
+CHAVE_PAGINA="pagina/sentinela-pagina.jar"
 
 echo
 echo "  Este script vai, com sua confirmacao a cada passo:"
@@ -70,6 +78,8 @@ echo "    2. enviar o jar do coletor e o zip da API para la"
 echo "    3. criar as duas tabelas do DynamoDB"
 echo "    4. criar a Lambda do coletor, papel IAM e o agendamento de 5 em 5 minutos"
 echo "    5. criar a Lambda da API, papel IAM e o endereco publico (Function URL)"
+echo "    6. montar a pagina ja apontando pra API publicada, e publica-la tambem"
+echo "    7. atualizar o CORS da API para aceitar chamadas vindas da pagina"
 echo
 echo "  Custo esperado: US\$ 0/mes. Ver infra/README.md para as contas."
 
@@ -80,9 +90,9 @@ if aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
   echo "  o bucket ${BUCKET} ja existe."
 else
   confirmar aws s3 mb "s3://${BUCKET}" --region "${REGIAO}" || true
-  # Bloqueia acesso publico. Nenhum dos dois arquivos tem segredo dentro, mas
-  # bucket aberto e o erro de configuracao mais comum da AWS e nao ha motivo
-  # para correr o risco.
+  # Bloqueia acesso publico. Nenhum arquivo tem segredo dentro, mas bucket
+  # aberto e o erro de configuracao mais comum da AWS e nao ha motivo para
+  # correr o risco.
   confirmar aws s3api put-public-access-block \
     --bucket "${BUCKET}" \
     --public-access-block-configuration \
@@ -145,19 +155,12 @@ confirmar aws cloudformation deploy \
 # ---------------------------------------------------------------------------
 titulo "5. A API: funcao e endereco publico"
 
-# Origens de CORS: quem pode ler a API pelo navegador. Sem a pagina publicada
-# ainda (S3/CloudFront vem depois), o padrao aqui cobre o ambiente local -- da
-# para editar painel.js e apontar para a URL publica e testar contra ela antes
-# de publicar a pagina de verdade. Atualize esta variavel e rode o deploy de
-# novo quando o CloudFront existir.
+# Comeca so com localhost liberado; depois de publicar a pagina (passo 7), a
+# origem publica dela entra aqui tambem, numa atualizacao da mesma pilha.
 if [ -z "${SENTINELA_ORIGENS_PERMITIDAS:-}" ]; then
   SENTINELA_ORIGENS_PERMITIDAS="http://localhost:5500,http://127.0.0.1:5500"
 fi
 echo "  origens liberadas para CORS: ${SENTINELA_ORIGENS_PERMITIDAS}"
-
-echo
-echo "  Primeira vez usando este mecanismo (AWS Lambda Web Adapter) neste projeto:"
-echo "  o codigo Spring Boot nao mudou, mas vale conferir os logs apos o deploy."
 
 confirmar aws cloudformation deploy \
   --template-file "${RAIZ}/infra/api.yaml" \
@@ -170,21 +173,73 @@ confirmar aws cloudformation deploy \
   "ChaveDoCodigo=${CHAVE_API}" \
   "OrigensPermitidas=${SENTINELA_ORIGENS_PERMITIDAS}" || true
 
+URL_DA_API="$(url_da_pilha "${PILHA_API}")"
+echo "  API publicada em: ${URL_DA_API:-<pulado, sem URL disponivel>}"
+
+# ---------------------------------------------------------------------------
+titulo "6. A pagina: montar ja com o endereco da API, e publicar"
+
+if [ -z "${URL_DA_API}" ]; then
+  echo "  Sem a URL da API (passo 5 foi pulado), nao da pra montar a pagina agora."
+else
+  echo "  Preparando os recursos com painel.js apontando para ${URL_DA_API%/}..."
+  python3 "${RAIZ}/infra/preparar_pagina.py" "${URL_DA_API%/}" \
+    || python "${RAIZ}/infra/preparar_pagina.py" "${URL_DA_API%/}"
+
+  echo "  empacotando (mvnw package)..."
+  (cd "${RAIZ}/pagina" && ./mvnw -q -B package -DskipTests)
+  ZIP_PAGINA="${RAIZ}/pagina/target/sentinela-pagina-0.0.1-SNAPSHOT.jar"
+  echo "  jar da pagina   : $(du -h "${ZIP_PAGINA}" | cut -f1)"
+
+  confirmar aws s3 cp "${ZIP_PAGINA}" "s3://${BUCKET}/${CHAVE_PAGINA}" || true
+
+  confirmar aws cloudformation deploy \
+    --template-file "${RAIZ}/infra/pagina.yaml" \
+    --stack-name "${PILHA_PAGINA}" \
+    --region "${REGIAO}" \
+    --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides \
+    "Ambiente=${AMBIENTE}" \
+    "BucketDoCodigo=${BUCKET}" \
+    "ChaveDoCodigo=${CHAVE_PAGINA}" || true
+fi
+
+URL_DA_PAGINA="$(url_da_pilha "${PILHA_PAGINA}")"
+
+# ---------------------------------------------------------------------------
+titulo "7. Liberar a origem da pagina no CORS da API"
+
+if [ -z "${URL_DA_PAGINA}" ]; then
+  echo "  Sem a URL da pagina, nada a atualizar."
+else
+  ORIGEM_DA_PAGINA="${URL_DA_PAGINA%/}"
+  NOVAS_ORIGENS="${SENTINELA_ORIGENS_PERMITIDAS},${ORIGEM_DA_PAGINA}"
+  echo "  adicionando ${ORIGEM_DA_PAGINA} as origens permitidas..."
+
+  confirmar aws cloudformation deploy \
+    --template-file "${RAIZ}/infra/api.yaml" \
+    --stack-name "${PILHA_API}" \
+    --region "${REGIAO}" \
+    --capabilities CAPABILITY_NAMED_IAM \
+    --parameter-overrides \
+    "Ambiente=${AMBIENTE}" \
+    "BucketDoCodigo=${BUCKET}" \
+    "ChaveDoCodigo=${CHAVE_API}" \
+    "OrigensPermitidas=${NOVAS_ORIGENS}" || true
+fi
+
 # ---------------------------------------------------------------------------
 titulo "Pronto"
 
-URL_DA_API="$(aws cloudformation describe-stacks --stack-name "${PILHA_API}" --region "${REGIAO}" \
-  --query "Stacks[0].Outputs[?OutputKey=='UrlPublica'].OutputValue" --output text 2>/dev/null || echo "<ainda nao criada>")"
-
 cat <<FIM
 
-  URL PUBLICA DA API:
+  O PAINEL:
 
-    ${URL_DA_API}
+    ${URL_DA_PAGINA:-<nao publicada>}
 
-  Teste rapido:
+  A API por baixo:
 
-    curl ${URL_DA_API}ping
+    ${URL_DA_API:-<nao publicada>}
 
   Coletor -- disparar uma rodada agora, sem esperar os 5 minutos:
 
@@ -194,13 +249,15 @@ cat <<FIM
 
     aws logs tail /aws/lambda/sentinela-${AMBIENTE}-coletor --follow
     aws logs tail /aws/lambda/sentinela-${AMBIENTE}-api --follow
+    aws logs tail /aws/lambda/sentinela-${AMBIENTE}-pagina --follow
 
   Ver o que foi gravado:
 
     aws dynamodb scan --table-name sentinela-${AMBIENTE}-verificacoes --max-items 5
 
-  REMOVER TUDO (na ordem, coletor e api dependem das tabelas):
+  REMOVER TUDO (na ordem, coletor/api/pagina dependem das tabelas):
 
+    aws cloudformation delete-stack --stack-name ${PILHA_PAGINA}
     aws cloudformation delete-stack --stack-name ${PILHA_API}
     aws cloudformation delete-stack --stack-name ${PILHA_COLETOR}
     aws cloudformation delete-stack --stack-name ${PILHA_TABELAS}

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.sentinela</groupId>
+  <artifactId>sentinela-pagina</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>sentinela-pagina</name>
+  <description>Serve o painel estatico (web/) atras de uma Lambda Function URL</description>
+
+  <!--
+    Projeto independente de api/ e coletor/, pelo mesmo motivo dos dois: as
+    pecas nao compartilham codigo, so se encontram pelos contratos que
+    escolhem expor - aqui, o contrato e "responde HTTP", nada mais.
+
+    Nao usa o AWS Lambda Web Adapter que a api/ usa. Aquele existe para rodar
+    Spring Boot sem reescrever nada; aqui nao ha Spring Boot nenhum para
+    adaptar - e um handler Lambda nativo, do jeito mais direto que a
+    plataforma permite, porque servir tres arquivos estaticos nao precisa de
+    mais que isso. O ganho e cold start bem mais rapido que o da API.
+  -->
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <junit.version>6.0.3</junit.version>
+    <assertj.version>3.27.7</assertj.version>
+  </properties>
+
+  <dependencies>
+    <!--
+      Unica dependencia de execucao: a interface do handler e o objeto de
+      contexto que a Lambda passa. Nada de AWS SDK aqui - esta funcao nunca
+      fala com DynamoDB nem com nenhum outro servico, so devolve bytes que ja
+      estao empacotados junto com ela.
+    -->
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-lambda-java-core</artifactId>
+      <version>1.4.0</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.15.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.6</version>
+      </plugin>
+      <!--
+        shade, e nao o jar-plugin comum: o jar final precisa carregar a
+        aws-lambda-java-core junto, porque o "Handler" desta funcao e a classe
+        Java direto (ManipuladorDaPagina::handleRequest) - sem processo java
+        externo nem adaptador no meio, e a Lambda so acha essa classe se as
+        dependencias dela estiverem dentro do proprio jar.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.2</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
