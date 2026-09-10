@@ -1,24 +1,32 @@
 {
   "_comentario": "Copie para config.json e preencha com os valores reais. config.json e gitignorado: e nele que ficam o caminho do banco e o id da aplicacao, que nao vao para o repositorio. A chave e a URL do Sentinela nao ficam aqui -- vem das variaveis de ambiente SENTINELA_CHAVE e SENTINELA_URL.",
 
-  "banco": "/caminho/para/auditoria.db",
+  "banco": "/caminho/para/o/banco.db",
   "tabela": "logs",
   "sistema": "id-da-aplicacao-no-sentinela",
   "fuso": "America/Sao_Paulo",
   "ambiente": "producao",
   "arquivo_de_cursor": "cursor.json",
 
-  "_comentario_regras": "Primeira regra que casa vence, entao a mais especifica vem antes. 'contem' e uma lista de trechos que precisam TODOS aparecer no texto da coluna de atividade, comparados literalmente (maiusculas e acentos incluidos). 'motivo' so e usado quando a linha for de falha.",
+  "_comentario_regras": "Traduz o rotulo da acao em um tipo de evento. Primeira regra que casa vence, entao a mais especifica vem antes. 'contem' e uma lista de trechos que precisam TODOS aparecer no rotulo (maiuscula/minuscula nao importam, acentos sim). 'motivo_padrao' e o codigo usado quando a linha e de falha e nenhum padrao de motivos_por_texto casa.",
   "regras": [
     {
       "contem": ["ACAO EXEMPLO", "RECUSAD"],
       "tipo": "tipo.exemplo",
-      "motivo": "alvo_protegido"
+      "motivo_padrao": "alvo_protegido"
     },
     {
       "contem": ["ACAO EXEMPLO"],
       "tipo": "tipo.exemplo",
-      "motivo": "erro_inesperado"
+      "motivo_padrao": "erro_inesperado"
+    }
+  ],
+
+  "_comentario_motivos": "Traduz o texto de diagnostico da linha em um codigo de motivo. Esse texto costuma conter dado pessoal (e-mail, por exemplo) e por isso NUNCA e publicado nem logado -- ele so passa por aqui para virar um dos codigos abaixo. Comece com a lista vazia: so da para escrever esses padroes depois de ver uma falha de verdade, olhando o texto dentro do proprio banco de origem.",
+  "motivos_por_texto": [
+    {
+      "contem": ["exemplo de trecho da mensagem de erro"],
+      "motivo": "dependencia_indisponivel"
     }
   ]
 }

@@ -6,10 +6,15 @@ O sistema de origem nao ganha uma linha de codigo: este script abre o SQLite
 dele em modo somente leitura, guarda num arquivo proprio ate onde ja leu, e
 traduz cada linha nova para o modelo de evento do Sentinela.
 
-DADO PESSOAL: o filtro nao acontece na hora de montar o payload, e sim na
-consulta. Apenas as colunas de COLUNAS sao lidas. As demais -- que carregam
-nome, UPN ou e-mail -- nunca chegam a entrar em memoria, nem para serem
-descartadas depois. Acrescentar coluna aqui exige revisar o que ela carrega.
+DADO PESSOAL. Duas categorias de coluna, com tratamento diferente:
+
+  - COLUNAS_DO_EVENTO viram conteudo do evento e nao carregam dado pessoal.
+  - COLUNA_DE_DIAGNOSTICO e lida, mas o texto dela NUNCA sai daqui: ele entra
+    so em motivo_de(), que sabe devolver apenas um codigo vindo da
+    configuracao. Essa coluna costuma ter e-mail no meio do texto.
+
+  As demais colunas -- nome, UPN, quem executou -- nao entram na consulta.
+  Nao ha o que descartar depois porque elas nunca sao lidas.
 
 Sem dependencia externa, so biblioteca padrao: o script precisa poder ser
 copiado para um servidor e rodar sem "pip install" nenhum.
@@ -22,16 +27,25 @@ import sqlite3
 import sys
 import urllib.error
 import urllib.request
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-# As unicas colunas que este script pode ler.
-COLUNAS = ("id", "data", "atividade", "sucesso")
+COLUNAS_DO_EVENTO = ("id", "data", "atividade", "sucesso")
+COLUNA_DE_DIAGNOSTICO = "status"
 
 TEMPO_LIMITE_S = 10
 
 log = logging.getLogger("publicador")
+
+
+def casa(texto, trechos):
+    # Comparacao sem diferenciar maiuscula de minuscula: o rotulo da acao e
+    # escrito a mao no sistema de origem, e trocar a caixa dele nao deveria
+    # ser suficiente para este script parar de reconhecer a acao.
+    alvo = texto.casefold()
+    return all(trecho.casefold() in alvo for trecho in trechos)
 
 
 def validar_tabela(tabela):
@@ -58,18 +72,32 @@ def maior_id(conexao, tabela):
 
 
 def linhas_novas(conexao, tabela, ultimo_id):
+    colunas = ", ".join(COLUNAS_DO_EVENTO + (COLUNA_DE_DIAGNOSTICO,))
     consulta = (
-        f"SELECT {', '.join(COLUNAS)} FROM {validar_tabela(tabela)} "
-        "WHERE id > ? ORDER BY id"
+        f"SELECT {colunas} FROM {validar_tabela(tabela)} WHERE id > ? ORDER BY id"
     )
     return conexao.execute(consulta, (ultimo_id,))
 
 
 def primeira_regra(atividade, regras):
     for regra in regras:
-        if all(trecho in atividade for trecho in regra["contem"]):
+        if casa(atividade, regra["contem"]):
             return regra
     return None
+
+
+def motivo_de(diagnostico, padroes, padrao_final):
+    """Traduz o texto de diagnostico em um codigo da lista fechada.
+
+    Esta funcao e a fronteira do dado pessoal. O texto que entra aqui pode
+    conter e-mail; o que sai e sempre um codigo vindo da configuracao, nunca
+    um pedaco do texto. Nao logar o argumento, nao devolve-lo, nao guarda-lo.
+    """
+    if diagnostico:
+        for padrao in padroes:
+            if casa(diagnostico, padrao["contem"]):
+                return padrao["motivo"]
+    return padrao_final
 
 
 def para_utc(data_local, fuso):
@@ -81,17 +109,7 @@ def para_utc(data_local, fuso):
     return em_utc.isoformat(timespec="milliseconds")
 
 
-def traduzir(linha, config):
-    regra = primeira_regra(linha["atividade"], config["regras"])
-    if regra is None:
-        return None
-
-    if linha["sucesso"] is None:
-        # Linha anterior a existir a coluna. Deduzir o resultado do texto ja
-        # produziu falso "falha" neste sistema antes -- ignorar e melhor que
-        # publicar um numero errado.
-        return None
-
+def montar(linha, regra, config):
     sucesso = bool(linha["sucesso"])
     evento = {
         "sistema": config["sistema"],
@@ -100,7 +118,11 @@ def traduzir(linha, config):
         "ocorridoEm": para_utc(linha["data"], config["fuso"]),
     }
     if not sucesso:
-        evento["motivo"] = regra["motivo"]
+        evento["motivo"] = motivo_de(
+            linha[COLUNA_DE_DIAGNOSTICO],
+            config.get("motivos_por_texto", []),
+            regra["motivo_padrao"],
+        )
     if config.get("ambiente"):
         evento["contexto"] = {"ambiente": config["ambiente"]}
     return evento
@@ -163,24 +185,38 @@ def main():
             log.info("primeira execucao: partindo do id %s, historico nao e publicado", inicio)
             return
 
-        enviados = ignorados = 0
+        publicados = sem_resultado = 0
+        sem_regra = Counter()
+
         for linha in linhas_novas(conexao, config["tabela"], ultimo_id):
-            evento = traduzir(linha, config)
-            if evento is not None:
+            regra = primeira_regra(linha["atividade"], config["regras"])
+            if regra is None:
+                sem_regra[linha["atividade"]] += 1
+            elif linha["sucesso"] is None:
+                # Linha anterior a existir a coluna de resultado. Deduzir isso
+                # do texto ja produziu falso "falha" neste sistema antes.
+                sem_resultado += 1
+            else:
                 try:
-                    publicar(url, chave, evento)
+                    publicar(url, chave, montar(linha, regra, config))
                 except (urllib.error.URLError, RuntimeError) as erro:
                     # Para no ponto em que falhou, sem avancar o cursor: a
                     # proxima execucao retoma daqui. O sistema de origem nao
                     # sabe nem se importa que isto aconteceu.
                     log.warning("parando no id %s: %s", linha["id"], erro)
                     break
-                enviados += 1
-            else:
-                ignorados += 1
+                publicados += 1
             gravar_cursor(cursor, linha["id"])
 
-        log.info("%s evento(s) publicado(s), %s linha(s) ignorada(s)", enviados, ignorados)
+        log.info("%s evento(s) publicado(s)", publicados)
+        if sem_resultado:
+            log.info("%s linha(s) sem resultado gravado, ignorada(s)", sem_resultado)
+        if sem_regra:
+            # Rotulo sem regra e o sinal de que o sistema de origem mudou um
+            # nome. Sem esta linha, um rename vira silencio: nada publicado e
+            # nenhum erro. O rotulo nao carrega dado pessoal.
+            resumo = ", ".join(f"{rotulo!r} ({vezes}x)" for rotulo, vezes in sem_regra.most_common(10))
+            log.info("rotulo(s) sem regra: %s", resumo)
     finally:
         conexao.close()
 
