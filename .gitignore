@@ -30,6 +30,11 @@ alvos*.yml
 alvos*.json
 alvos*.properties
 !alvos.exemplo.properties
+# O publicador de auditoria le a base de um sistema real: o caminho desse
+# banco e o id da aplicacao ficam so na config local, junto do cursor de
+# leitura. O .exemplo, com valores ficticios, e o que fica versionado.
+publicador-auditoria/config.json
+publicador-auditoria/cursor.json
 # ---------------------------------------------------------------------------
 
 # IDEs
