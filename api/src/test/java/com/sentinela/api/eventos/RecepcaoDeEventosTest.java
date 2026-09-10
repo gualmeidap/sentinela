@@ -44,7 +44,7 @@ class RecepcaoDeEventosTest {
                 List.of("dependencia_indisponivel"),
                 List.of("campus"));
         PropriedadesDoSentinela propriedades =
-                new PropriedadesDoSentinela(List.of(), List.of(aplicacao), "America/Sao_Paulo");
+                new PropriedadesDoSentinela(List.of(), List.of(aplicacao), List.of(), "America/Sao_Paulo");
 
         Clock relogio = Clock.fixed(AGORA, ZoneOffset.UTC);
         repositorio = new RepositorioDeEventosEmMemoria();

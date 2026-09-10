@@ -22,8 +22,11 @@ public record SistemaMonitorado(String id, String nome, URI url) {
         if (nome == null || nome.isBlank()) {
             throw new IllegalArgumentException("nome do sistema e obrigatorio");
         }
-        if (url == null) {
-            throw new IllegalArgumentException("url do sistema e obrigatoria");
-        }
+        // url e opcional, e isso importa: a API nunca chama o alvo -- quem
+        // verifica disponibilidade e o coletor, que recebe os enderecos por
+        // variavel de ambiente. Aqui a url so seria devolvida na resposta e
+        // impressa na tela, e a tela da instancia privada fica atras de uma
+        // Function URL sem autenticacao. Endereco interno nao entra nesta
+        // lista: a instancia privada declara id e nome, e mais nada.
     }
 }

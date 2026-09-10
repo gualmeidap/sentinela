@@ -72,10 +72,12 @@ function cartao(sistema, fita, eventos) {
 
 function identidade(sistema) {
   const bloco = elemento('div', 'cartao-identidade');
-  bloco.append(
-    elemento('h2', null, sistema.nome),
-    elemento('p', 'url', sistema.url)
-  );
+  bloco.append(elemento('h2', null, sistema.nome));
+  // Sistema que so publica evento nao declara endereco, e a instancia privada
+  // nao declara nenhum: endereco interno nao vai para uma tela publica.
+  if (sistema.url) {
+    bloco.append(elemento('p', 'url', sistema.url));
+  }
   return bloco;
 }
 

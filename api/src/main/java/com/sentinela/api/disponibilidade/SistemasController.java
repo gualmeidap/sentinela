@@ -49,7 +49,9 @@ public class SistemasController {
             return new SistemaResposta(
                     estado.sistema().id(),
                     estado.sistema().nome(),
-                    estado.sistema().url().toString(),
+                    // Nulo quando o sistema nao declara endereco -- e o caso de
+                    // quem so publica evento, e de toda a instancia privada.
+                    estado.sistema().url() == null ? null : estado.sistema().url().toString(),
                     estado.situacao(),
                     estado.tempoRespostaMs(),
                     estado.ultimaVerificacao());

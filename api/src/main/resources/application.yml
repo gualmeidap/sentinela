@@ -33,6 +33,32 @@ sentinela:
   # Fuso em que o "hoje" da contagem de eventos e calculado.
   fuso-horario: America/Sao_Paulo
 
+  # Os sistemas que a API conhece. Estar aqui e pre-requisito para aparecer no
+  # painel -- tanto para disponibilidade quanto para eventos.
+  #
+  # A "url" e opcional e serve so para a tela mostrar o que esta sendo
+  # monitorado. Quem de fato verifica o alvo e o coletor, que recebe os
+  # enderecos por variavel de ambiente e nao le este arquivo. Numa instancia
+  # privada a url fica de fora: endereco interno nao vai para uma tela publica.
+  #
+  # Os alvos abaixo sao servicos publicos de verdade. A instancia publica e
+  # demonstracao, e medir servico real da um diferencial sobre alvo ficticio: o
+  # painel mostra disponibilidade e tempo de resposta medidos, e nao numero que
+  # nunca foi checado. Subdominio de example.com pareceria mais seguro por ser
+  # ficticio, mas so o dominio raiz e reservado pela RFC 2606 -- os subdominios
+  # nao tem servidor nenhum atras, o que so apareceu ao ligar o coletor de
+  # verdade contra a AWS.
+  sistemas:
+    - id: portal-servicos
+      nome: Portal de Servicos
+      url: https://github.com
+    - id: api-integracao
+      nome: API de Integracao
+      url: https://api.github.com
+    - id: agendamento
+      nome: Agendamento Online
+      url: https://www.wikipedia.org
+
   # Sistemas autorizados a publicar em POST /eventos.
   #
   # A chave de verdade vem da variavel de ambiente. O valor apos os dois

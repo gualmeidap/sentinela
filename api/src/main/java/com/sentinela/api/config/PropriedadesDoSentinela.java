@@ -1,5 +1,6 @@
 package com.sentinela.api.config;
 
+import com.sentinela.api.sistema.SistemaMonitorado;
 import java.time.ZoneId;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -18,14 +19,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * "origensPermitidas" aqui casa com "origens-permitidas" no YAML. Java usa
  * camelCase, arquivo de configuracao usa kebab-case, e o Spring faz a ponte.
  *
- * Este e o mecanismo pelo qual a lista de alvos monitorados vai sair do codigo
- * mais adiante -- hoje ela ainda esta fixa no CatalogoDeSistemas, que e o
- * combinado do passo 1.
+ * A lista de sistemas monitorados chegou aqui vindo do CatalogoDeSistemas, onde
+ * ficou fixa no codigo durante o passo 1. Ela precisou sair de la para a
+ * instancia privada poder declarar os sistemas reais no seu proprio
+ * application-{perfil}.yml, que nunca e versionado.
  */
 @ConfigurationProperties(prefix = "sentinela")
 public record PropriedadesDoSentinela(
         List<String> origensPermitidas,
         List<AplicacaoPublicadora> aplicacoes,
+        List<SistemaMonitorado> sistemas,
         String fusoHorario) {
 
     private static final String FUSO_PADRAO = "America/Sao_Paulo";
@@ -33,6 +36,9 @@ public record PropriedadesDoSentinela(
     public PropriedadesDoSentinela {
         origensPermitidas = origensPermitidas == null ? List.of() : List.copyOf(origensPermitidas);
         aplicacoes = aplicacoes == null ? List.of() : List.copyOf(aplicacoes);
+        // Lista vazia e estado valido: um sistema pode publicar evento sem ser
+        // verificado quanto a disponibilidade, e vice-versa.
+        sistemas = sistemas == null ? List.of() : List.copyOf(sistemas);
         fusoHorario = (fusoHorario == null || fusoHorario.isBlank()) ? FUSO_PADRAO : fusoHorario;
         ZoneId.of(fusoHorario); // fuso invalido derruba a subida, e nao a primeira requisicao
     }
