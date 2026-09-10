@@ -360,6 +360,9 @@ aplicação.
 - Campos de contexto adicionais são permitidos desde que não identifiquem
   pessoa (ex.: `campus`, `fornecedorTipo`).
 
+Guia completo, com exemplo em Python e o porquê de cada regra:
+[`infra/integracao-publicador.md`](infra/integracao-publicador.md).
+
 ## Endpoints
 
 | Método | Rota | O que faz | Estado |
