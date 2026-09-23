@@ -220,13 +220,26 @@ function ultimosEventos(eventos) {
       elemento('span', 'evento-tipo', evento.tipo),
       elemento('span', 'evento-resultado ' + evento.resultado.toLowerCase(),
         evento.resultado === 'SUCESSO' ? 'sucesso' : 'falha'),
-      elemento('span', 'evento-motivo', evento.motivo || '')
+      elemento('span', 'evento-motivo', detalheDoEvento(evento))
     );
     return item;
   }));
 
   bloco.append(lista);
   return bloco;
+}
+
+/*
+ * Motivo e contexto dividem a ultima coluna. O contexto e o que diz *onde*
+ * (qual campus, qual camera) -- a API ja devolvia, mas a tela nao mostrava, e
+ * "falha sem_quadros" sem dizer de qual camera deixa a pergunta no ar.
+ */
+function detalheDoEvento(evento) {
+  const partes = evento.motivo ? [evento.motivo] : [];
+  for (const [chave, valor] of Object.entries(evento.contexto || {})) {
+    partes.push(chave + ': ' + valor);
+  }
+  return partes.join('  ·  ');
 }
 
 function classeDaSituacao(situacao) {
