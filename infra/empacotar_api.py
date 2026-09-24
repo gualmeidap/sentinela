@@ -19,7 +19,19 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 ALVO_DO_JAR = RAIZ / "api" / "target"
 SAIDA = RAIZ / "infra" / "build" / "sentinela-api.zip"
 
-RUN_SH = "#!/bin/sh\nexec java -jar {nome_do_jar}\n"
+# SENTINELA_CHAVES_EXTRAS chega empacotada -- "NOME=valor;NOME=valor" -- para
+# o template infra/api.yaml poder crescer para N aplicacoes privadas sem
+# ganhar um parametro novo a cada uma. E' aqui, e nao no template, que isso
+# vira variavel de ambiente de verdade, uma por par, antes do java subir.
+RUN_SH = """#!/bin/sh
+if [ -n "$SENTINELA_CHAVES_EXTRAS" ]; then
+  IFS=';'
+  for par in $SENTINELA_CHAVES_EXTRAS; do
+    [ -n "$par" ] && export "$par"
+  done
+fi
+exec java -jar {nome_do_jar}
+"""
 
 
 def encontrar_jar():

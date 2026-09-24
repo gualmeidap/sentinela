@@ -64,15 +64,21 @@ Parameters:
       application-{perfil}.yml proprio (nunca versionado) com os sistemas
       reais, sem esse arquivo nem esse nome aparecerem aqui.
 
-  ChaveDeAplicacaoExtra:
+  ChavesDeAplicacoesExtras:
     Type: String
     NoEcho: true
     Default: ""
     Description: >
-      Valor de uma credencial de aplicacao que so a instancia privada usa. Em
-      branco na instancia publica. NoEcho: nao aparece no console nem nos
-      eventos da pilha. Este template nunca sabe o que essa chave abre --
-      isso mora so no application-{perfil}.yml local, gitignorado.
+      Zero ou mais credenciais de aplicacao que so a instancia privada usa, no
+      formato NOME_DA_VARIAVEL=valor;NOME_DA_VARIAVEL=valor -- sem ";" dentro
+      de um valor, sem ";" sobrando no final. Em branco na instancia publica.
+      NoEcho esconde o valor no console e nos eventos da pilha, mas ele existe
+      em texto puro na configuracao da funcao (como qualquer variavel de
+      ambiente de Lambda) -- a protecao real e o IAM da sua conta, nao o
+      NoEcho. O run.sh desempacota isto em variaveis de ambiente separadas
+      antes de subir a aplicacao, uma por par. Este template nunca sabe
+      quantas aplicacoes existem nem o que cada chave abre -- isso mora so no
+      application-{perfil}.yml local, gitignorado.
 
 Conditions:
   TemPerfilAdicional: !Not [!Equals [!Ref PerfilAdicional, ""]]
@@ -197,7 +203,11 @@ Resources:
           SENTINELA_DYNAMO_TABELA_EVENTOS:
             Fn::ImportValue: !Sub "sentinela-${Ambiente}-tabela-eventos"
           SENTINELA_ORIGENS_PERMITIDAS: !Join [",", !Ref OrigensPermitidas]
-          SENTINELA_CHAVE_APLICACAO_PRIVADA: !Ref ChaveDeAplicacaoExtra
+          # Uma unica variavel empacotada, nao uma por aplicacao: cada
+          # aplicacao nova que a instancia privada ganhar precisa so de uma
+          # linha nova no application-{perfil}.yml local, sem tocar aqui.
+          # E o run.sh (nao este template) quem desempacota isto.
+          SENTINELA_CHAVES_EXTRAS: !Ref ChavesDeAplicacoesExtras
           # SENTINELA_DYNAMO_CRIAR_TABELAS fica de fora: as tabelas ja existem,
           # criadas pela pilha de tabelas. A API nao tem permissao de
           # CreateTable no papel acima -- de proposito.
