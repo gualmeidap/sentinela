@@ -29,7 +29,7 @@ X-Chave-Aplicacao: <chave combinada com o Sentinela>
   configuração do Sentinela, não o código dele.
 - `motivo` só existe quando `resultado` é `"falha"`. Nunca é mensagem de
   exceção crua — é sempre um código curto (`dependencia_indisponivel`, não
-  `"Connection refused to 10.0.4.12:389"`).
+  `"Connection refused to 192.0.2.10:389"`).
 - `contexto` é opcional, e cada valor precisa ser um código curto em
   minúsculas (`^[a-z0-9][a-z0-9_.-]{0,39}$`). Nunca nome, e-mail ou qualquer
   coisa que identifique uma pessoa — essa é a regra inegociável do projeto.
