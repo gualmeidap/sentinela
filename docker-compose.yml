@@ -13,8 +13,12 @@ services:
   dynamodb:
     image: amazon/dynamodb-local:3.3.1
     container_name: sentinela-dynamodb
+    # 8001 aqui fora, 8000 la dentro. A 8000 e a porta mais disputada de uma
+    # maquina de desenvolvimento: qualquer servidor local que a ocupe faz o teste
+    # achar que o banco esta no ar e falhar com um 405 que nao tem relacao com o
+    # codigo. O healthcheck abaixo fala com a porta de DENTRO do container.
     ports:
-      - "8000:8000"
+      - "8001:8000"
     # -sharedDb: sem isto, o DynamoDB Local cria um banco separado para cada
     #   combinacao de credencial e regiao, e voce grava numa tabela e le de
     #   outra sem entender por que ela aparece vazia.

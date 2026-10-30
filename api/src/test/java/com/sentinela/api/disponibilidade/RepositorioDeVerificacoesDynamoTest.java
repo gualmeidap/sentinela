@@ -141,7 +141,9 @@ class RepositorioDeVerificacoesDynamoTest {
                 "respondeu", AttributeValue.fromBool(false),
                 "tempoRespostaMs", AttributeValue.fromN("5000"),
                 "motivo", AttributeValue.fromS("TEMPO_ESGOTADO"),
-                "expiraEm", AttributeValue.fromN("1791500000"))));
+                // 2100-01-01: um valor fixo no passado seria apagado pelo TTL do
+                // banco antes de o teste ler o item de volta.
+                "expiraEm", AttributeValue.fromN("4102444800"))));
 
         List<Verificacao> lidas = repositorio.entre(sistema, momento, momento.plusSeconds(60));
 

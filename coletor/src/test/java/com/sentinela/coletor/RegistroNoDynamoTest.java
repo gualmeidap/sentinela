@@ -106,7 +106,7 @@ class RegistroNoDynamoTest {
 
         long expira = Long.parseLong(itemDe("com-ttl").get(ChavesDoBanco.EXPIRA_EM).n());
         assertThat(Instant.ofEpochSecond(expira))
-                .isEqualTo(Instant.parse("2026-10-07T15:30:00Z"));
+                .isEqualTo(MOMENTO.plus(destino.retencao()));
     }
 
     @Test

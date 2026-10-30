@@ -23,8 +23,16 @@ import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
  */
 public final class ApoioDynamoLocal {
 
-    public static final String ENDPOINT = "http://localhost:8000";
-    private static final int PORTA = 8000;
+    public static final String ENDPOINT = "http://localhost:8001";
+    private static final int PORTA = 8001;
+
+    /**
+     * Retencao enorme de proposito. Os testes usam datas fixas, e com 30 dias o
+     * item nascia ja vencido: o DynamoDB Local apaga por TTL de verdade, entao
+     * ele sumia no meio do teste. O teste passava no mes em que foi escrito e
+     * passou a falhar, de forma intermitente, quando o calendario andou.
+     */
+    private static final Duration RETENCAO_DOS_TESTES = Duration.ofDays(36_500);
 
     private ApoioDynamoLocal() {
     }
@@ -44,7 +52,7 @@ public final class ApoioDynamoLocal {
                 "coletor-teste-" + UUID.randomUUID().toString().substring(0, 8),
                 ENDPOINT,
                 "us-east-1",
-                Duration.ofDays(30));
+                RETENCAO_DOS_TESTES);
     }
 
     /**

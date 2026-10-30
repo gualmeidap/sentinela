@@ -482,7 +482,7 @@ docker compose up -d
 E a API apontando para ela:
 
 ```bash
-cd api && SPRING_PROFILES_ACTIVE=local,dynamo SENTINELA_DYNAMO_ENDPOINT=http://localhost:8000 SENTINELA_DYNAMO_CRIAR_TABELAS=true ./mvnw spring-boot:run
+cd api && SPRING_PROFILES_ACTIVE=local,dynamo SENTINELA_DYNAMO_ENDPOINT=http://localhost:8001 SENTINELA_DYNAMO_CRIAR_TABELAS=true ./mvnw spring-boot:run
 ```
 
 Sem o perfil `dynamo`, valem os repositórios em memória e o SDK da AWS nem entra
@@ -495,7 +495,7 @@ ar; no CI ele sobe pelo mesmo `docker-compose.yml`, então lá eles sempre rodam
 Com o DynamoDB Local no ar, o coletor deixa de só imprimir:
 
 ```bash
-cd coletor && SENTINELA_DYNAMO_TABELA=sentinela-verificacoes SENTINELA_DYNAMO_ENDPOINT=http://localhost:8000 java -jar target/sentinela-coletor-0.0.1-SNAPSHOT.jar alvos.properties
+cd coletor && SENTINELA_DYNAMO_TABELA=sentinela-verificacoes SENTINELA_DYNAMO_ENDPOINT=http://localhost:8001 java -jar target/sentinela-coletor-0.0.1-SNAPSHOT.jar alvos.properties
 ```
 
 Sem a variável `SENTINELA_DYNAMO_TABELA` ele apenas imprime, como antes. Com
