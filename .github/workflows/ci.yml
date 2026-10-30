@@ -137,3 +137,24 @@ jobs:
 
       - name: Procurar dado privado nos arquivos versionados
         run: python3 infra/verificar_vazamento.py
+
+  # O exportador e o visualizador local seguram a chave de leitura da API
+  # privada: o que eles prometem (a chave so vai no cabecalho, nunca na saida,
+  # o proxy so repassa tres formas de caminho) so vale enquanto o teste rodar.
+  # Sem dependencia externa, entao nao ha o que instalar.
+  scripts:
+    name: Testes dos scripts em Python
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      - name: Testes do exportador
+        run: python3 -m unittest discover -s exportador-publico -p "test_*.py"
+
+      - name: Testes do visualizador local e da verificacao de vazamento
+        run: python3 -m unittest discover -s infra -p "test_*.py"
