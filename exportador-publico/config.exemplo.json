@@ -1,0 +1,15 @@
+{
+  "_comentario": "Copie para config.json e preencha. config.json, estado.json e status.json sao gitignorados aqui: config e estado carregam o id interno de cada sistema, e o status.json e o produto que vai para outro repositorio (o dos dados do portfolio), nao para este. O endereco da API privada nao fica aqui -- vem de SENTINELA_URL_PRIVADA.",
+
+  "estado": "estado.json",
+  "saida": "status.json",
+
+  "_comentario_projetos": "So o que esta nesta lista pode sair. id e o id do sistema na Sentinela privada (nunca publicado); slug e nome sao o que aparece no portfolio, escolhidos por voce. Sistema corporativo nao entra aqui: ele aparece no portfolio como estudo de caso, sem status ao vivo.",
+  "projetos": [
+    {
+      "id": "id-do-sistema-na-sentinela",
+      "slug": "meu-projeto",
+      "nome": "Nome publico escolhido por voce"
+    }
+  ]
+}

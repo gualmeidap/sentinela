@@ -58,3 +58,10 @@ Desktop.ini
 # Python
 __pycache__/
 *.pyc
+
+# O exportador publico le a Sentinela privada: config e estado carregam o id
+# interno de cada sistema, e o status.json e o produto que vai para outro
+# repositorio, nao para este. Fica versionado so o .exemplo.
+exportador-publico/config.json
+exportador-publico/estado.json
+exportador-publico/status.json
