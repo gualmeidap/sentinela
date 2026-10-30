@@ -47,6 +47,15 @@ public class TratadorDeErros {
         return problema;
     }
 
+    @ExceptionHandler(LeituraNaoAutorizada.class)
+    public ProblemDetail leituraNaoAutorizada(LeituraNaoAutorizada excecao) {
+        ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problema.setTitle("Leitura nao autorizada");
+        problema.setDetail("Informe a chave de leitura no cabecalho X-Chave-Leitura.");
+        problema.setProperty("codigo", "chave_de_leitura_invalida");
+        return problema;
+    }
+
     @ExceptionHandler(PublicacaoNaoAutorizada.class)
     public ProblemDetail publicacaoNaoAutorizada(PublicacaoNaoAutorizada excecao) {
         ProblemDetail problema = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);

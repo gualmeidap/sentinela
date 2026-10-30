@@ -80,6 +80,20 @@ Parameters:
       quantas aplicacoes existem nem o que cada chave abre -- isso mora so no
       application-{perfil}.yml local, gitignorado.
 
+  ChaveDeLeitura:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >
+      Chave que a API exige no cabecalho X-Chave-Leitura para QUALQUER leitura
+      (tudo sob /sistemas). Em branco, a leitura e aberta -- e o caso da
+      instancia publica, que e a demonstracao. A Function URL e publica por
+      construcao, entao na instancia privada esta chave e o que separa "quem
+      tem o endereco" de "quem pode ler o painel". Parametro proprio, e nao um
+      par dentro de ChavesDeAplicacoesExtras, para poder trocar so esta sem
+      redigitar as chaves dos publicadores. O application-{perfil}.yml local
+      decide se a chave e obrigatoria (a subida falha sem ela).
+
 Conditions:
   TemPerfilAdicional: !Not [!Equals [!Ref PerfilAdicional, ""]]
 
@@ -208,6 +222,7 @@ Resources:
           # linha nova no application-{perfil}.yml local, sem tocar aqui.
           # E o run.sh (nao este template) quem desempacota isto.
           SENTINELA_CHAVES_EXTRAS: !Ref ChavesDeAplicacoesExtras
+          SENTINELA_CHAVE_LEITURA: !Ref ChaveDeLeitura
           # SENTINELA_DYNAMO_CRIAR_TABELAS fica de fora: as tabelas ja existem,
           # criadas pela pilha de tabelas. A API nao tem permissao de
           # CreateTable no papel acima -- de proposito.
