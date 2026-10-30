@@ -113,3 +113,27 @@ jobs:
       - name: Rodar os testes
         working-directory: pagina
         run: ./mvnw -B --no-transfer-progress verify
+
+  # O repositorio e publico e a instancia privada nunca pode aparecer nele. Este
+  # job olha os arquivos versionados atras da FORMA do que e privado -- URL de
+  # Lambda fora da lista publica, IP de rede interna, id de conta, chave,
+  # arquivo de configuracao local. Quebrar aqui e o aviso antes de o push virar
+  # vazamento; o relatorio nao repete o valor achado, porque o log e publico.
+  privacidade:
+    name: Sem dado privado no repositorio
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v7
+
+      # A verificacao tambem tem teste: um detector que parou de detectar passa
+      # sempre, e e o pior tipo de falha porque parece seguranca.
+      - name: Testar a propria verificacao
+        run: python3 -m unittest discover -s infra -p "test_verificar*.py"
+
+      - name: Procurar dado privado nos arquivos versionados
+        run: python3 infra/verificar_vazamento.py

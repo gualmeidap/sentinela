@@ -65,3 +65,7 @@ __pycache__/
 exportador-publico/config.json
 exportador-publico/estado.json
 exportador-publico/status.json
+
+# Termos reais (empresa, sistema, dominio, id da conta) que infra/verificar_vazamento.py
+# procura antes do push. O proprio arquivo e a lista do que e privado.
+infra/termos-proibidos.local.txt
