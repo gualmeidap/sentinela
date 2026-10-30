@@ -12,6 +12,7 @@
 #
 # Configuracao no repositorio privado (Settings > Secrets and variables > Actions):
 #   secret   SENTINELA_URL_PRIVADA          endereco https://... da API privada
+#   secret   SENTINELA_CHAVE_LEITURA        a chave de leitura da API privada
 #   secret   TOKEN_DO_REPOSITORIO_DE_DADOS  token fine-grained, escopo: SO o
 #                                           repositorio de dados, Contents: write
 #   variable REPOSITORIO_DE_DADOS           dono/nome do repositorio de dados
@@ -57,6 +58,7 @@ jobs:
       - name: Exportar
         env:
           SENTINELA_URL_PRIVADA: ${{ secrets.SENTINELA_URL_PRIVADA }}
+          SENTINELA_CHAVE_LEITURA: ${{ secrets.SENTINELA_CHAVE_LEITURA }}
         run: python3 sentinela/exportador-publico/exportar.py config.json
 
       # O estado fica aqui, no repositorio privado. Se a coleta falhou o script

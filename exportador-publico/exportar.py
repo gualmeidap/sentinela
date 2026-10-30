@@ -24,6 +24,7 @@ Sem dependencia externa, so biblioteca padrao.
 
 Uso (PowerShell):
     $env:SENTINELA_URL_PRIVADA = "https://<endereco-da-api-privada>"
+    $env:SENTINELA_CHAVE_LEITURA = "<a chave de leitura, se a API exige>"
     python exportador-publico/exportar.py
 """
 
@@ -44,6 +45,10 @@ TEMPO_LIMITE_S = 10
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 DIA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ENDERECO_VALIDO = re.compile(r"^https://[A-Za-z0-9.-]+/?$")
+# Letras, numeros e o que base64 e url-safe usam. Fora disso o valor iria para
+# um cabecalho HTTP, onde quebra de linha vira injecao de outro cabecalho.
+CHAVE_VALIDA = re.compile(r"^[A-Za-z0-9_+/=.-]{16,200}$")
+CABECALHO_DA_CHAVE = "X-Chave-Leitura"
 
 # Todo campo que pode existir no arquivo publico, por nivel. Se um campo novo
 # for necessario, ele entra aqui de proposito, junto com o teste.
@@ -61,6 +66,21 @@ def endereco_da_api():
     if not ENDERECO_VALIDO.match(endereco):
         sys.exit("SENTINELA_URL_PRIVADA deve ser https://dominio, sem caminho nem aspas")
     return endereco.rstrip("/")
+
+
+def chave_de_leitura():
+    """A chave que a API privada exige para leitura, ou None se nao ha uma.
+
+    Sem a variavel o exportador ainda funciona contra uma API de leitura aberta.
+    O valor so vai para o cabecalho: nunca para saida, log ou mensagem de erro,
+    inclusive quando o formato e recusado.
+    """
+    chave = os.environ.get("SENTINELA_CHAVE_LEITURA", "").strip()
+    if not chave:
+        return None
+    if not CHAVE_VALIDA.match(chave):
+        sys.exit("SENTINELA_CHAVE_LEITURA com formato invalido")
+    return chave
 
 
 def validar_projeto(projeto, slugs_vistos):
@@ -158,9 +178,11 @@ def construir_status(projetos, estado, hoje, agora):
     }
 
 
-def buscar_resumo(api, sistema_id):
+def buscar_resumo(api, sistema_id, chave=None):
     url = f"{api}/sistemas/{urllib.parse.quote(sistema_id, safe='')}/eventos"
-    with urllib.request.urlopen(url, timeout=TEMPO_LIMITE_S) as resposta:
+    cabecalhos = {CABECALHO_DA_CHAVE: chave} if chave else {}
+    requisicao = urllib.request.Request(url, headers=cabecalhos)
+    with urllib.request.urlopen(requisicao, timeout=TEMPO_LIMITE_S) as resposta:
         return resumo_da_resposta(json.load(resposta))
 
 
@@ -185,12 +207,13 @@ def main():
     caminho = Path(argumento).resolve() if argumento else Path(__file__).resolve().parent / "config.json"
     config = carregar_config(caminho)
     api = endereco_da_api()
+    chave = chave_de_leitura()
     estado = ler_estado(config["estado"])
 
     hoje = None
     for projeto in config["projetos"]:
         try:
-            resumo = buscar_resumo(api, projeto["id"])
+            resumo = buscar_resumo(api, projeto["id"], chave)
         except (OSError, ValueError, KeyError, TypeError) as erro:
             # O slug e publico; o id interno nao vai para a saida de erro.
             print(f"aviso: sem leitura de {projeto['slug']} ({type(erro).__name__})", file=sys.stderr)

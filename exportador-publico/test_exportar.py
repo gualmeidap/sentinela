@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import unittest
@@ -156,6 +157,40 @@ class ConfiguracaoTest(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"SENTINELA_URL_PRIVADA": endereco}):
                     with self.assertRaises(SystemExit):
                         exportar.endereco_da_api()
+
+
+class ChaveDeLeituraTest(unittest.TestCase):
+    CHAVE = "chave-de-leitura-de-teste-0123456789"
+    CORPO = json.dumps({"hoje": {"dia": "2026-10-28", "total": 10, "sucessos": 9}}).encode()
+
+    def buscar(self, chave):
+        with mock.patch("urllib.request.urlopen", return_value=io.BytesIO(self.CORPO)) as urlopen:
+            exportar.buscar_resumo("https://api.exemplo.invalid", "id-interno-xyz", chave)
+        requisicao = urlopen.call_args.args[0]
+        return {nome.lower(): valor for nome, valor in requisicao.header_items()}
+
+    def test_a_chave_vai_no_cabecalho_de_leitura(self):
+        self.assertEqual(self.buscar(self.CHAVE).get("x-chave-leitura"), self.CHAVE)
+
+    def test_sem_chave_nenhum_cabecalho_e_enviado(self):
+        self.assertNotIn("x-chave-leitura", self.buscar(None))
+
+    def test_sem_a_variavel_nao_ha_chave(self):
+        with mock.patch.dict(os.environ, {"SENTINELA_CHAVE_LEITURA": "  "}):
+            self.assertIsNone(exportar.chave_de_leitura())
+
+    def test_chave_valida_e_lida_sem_os_espacos_em_volta(self):
+        with mock.patch.dict(os.environ, {"SENTINELA_CHAVE_LEITURA": f" {self.CHAVE}\n"}):
+            self.assertEqual(exportar.chave_de_leitura(), self.CHAVE)
+
+    def test_formato_invalido_e_recusado_sem_repetir_o_valor(self):
+        invalidas = ["curta", "com espaco no meio 1234567890", "linha\nnova-1234567890123456", "x" * 201]
+        for invalida in invalidas:
+            with self.subTest(tamanho=len(invalida)):
+                with mock.patch.dict(os.environ, {"SENTINELA_CHAVE_LEITURA": invalida}):
+                    with self.assertRaises(SystemExit) as contexto:
+                        exportar.chave_de_leitura()
+                self.assertNotIn(invalida.strip(), str(contexto.exception.code))
 
 
 class PodaTest(unittest.TestCase):
