@@ -1,0 +1,89 @@
+# MODELO do workflow que roda o exportador. NAO e executado neste repositorio:
+# copie para .github/workflows/exportar.yml de um repositorio PRIVADO.
+#
+# Por que privado: o estado.json guarda o id interno de cada sistema e a
+# contagem do dia de hoje, e o Actions nao tem disco entre execucoes. Num
+# repositorio publico a unica forma de guardar isso seria um commit ou um
+# artifact (baixavel por qualquer pessoa) -- as duas formas vazam.
+#
+# O repositorio privado tem so tres coisas: este workflow, o config.json (a
+# partir do config.exemplo.json) e o estado.json, que o proprio workflow cria
+# e atualiza. O codigo do exportador vem deste repositorio publico.
+#
+# Configuracao no repositorio privado (Settings > Secrets and variables > Actions):
+#   secret   SENTINELA_URL_PRIVADA          endereco https://... da API privada
+#   secret   TOKEN_DO_REPOSITORIO_DE_DADOS  token fine-grained, escopo: SO o
+#                                           repositorio de dados, Contents: write
+#   variable REPOSITORIO_DE_DADOS           dono/nome do repositorio de dados
+#
+# O token nao enxerga o site nem o Sentinela: se vazar, o pior que alguem faz e
+# reescrever o status.json -- que o site trata como dado nao confiavel.
+name: Exportar status
+
+on:
+  # De hora em hora: a ultima execucao do dia e a que fecha o numero daquele
+  # dia. O horario do Actions atrasa alguns minutos, e isso nao importa aqui.
+  schedule:
+    - cron: "17 * * * *"
+  # Nunca por pull_request nem push: esta execucao tem acesso aos secrets.
+  workflow_dispatch:
+
+# Uma execucao por vez: duas gravando o estado.json ao mesmo tempo perdem dado.
+concurrency:
+  group: exportar-status
+  cancel-in-progress: false
+
+permissions:
+  contents: write # so para gravar o estado.json NESTE repositorio privado
+
+jobs:
+  exportar:
+    name: Exportar o status publico
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar este repositorio (config.json e estado.json)
+        uses: actions/checkout@v7
+
+      # Codigo de terceiros rodando com acesso aos secrets: fixe em um commit
+      # (ref: <sha>) em vez de "main", e atualize de proposito.
+      - name: Baixar o codigo do exportador
+        uses: actions/checkout@v7
+        with:
+          repository: gualmeidap/sentinela
+          ref: main
+          path: sentinela
+
+      - name: Exportar
+        env:
+          SENTINELA_URL_PRIVADA: ${{ secrets.SENTINELA_URL_PRIVADA }}
+        run: python3 sentinela/exportador-publico/exportar.py config.json
+
+      # O estado fica aqui, no repositorio privado. Se a coleta falhou o script
+      # sai com erro antes deste passo e nada e gravado.
+      - name: Guardar o estado
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add estado.json
+          git diff --cached --quiet || git commit -m "estado: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
+
+      - name: Baixar o repositorio de dados
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.REPOSITORIO_DE_DADOS }}
+          token: ${{ secrets.TOKEN_DO_REPOSITORIO_DE_DADOS }}
+          path: dados
+
+      # Sai um commit por hora, de proposito: o geradoEm dentro do arquivo e o
+      # que o site usa para saber se a coleta parou.
+      - name: Publicar o status.json
+        working-directory: dados
+        run: |
+          cp ../status.json status.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add status.json
+          git diff --cached --quiet || git commit -m "status: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
